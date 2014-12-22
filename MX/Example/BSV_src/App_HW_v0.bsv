@@ -91,9 +91,6 @@ module mkApp_HW (BC_HW_IFC);
 
 	    hw2.waitTillDone;
 
-            // Must wait for writes to reach memory before signaling completion
-	    delay (200);
-
             // signal caep inst completion
 	    simple_dispatch_app_ifc.put_caep_result.put (0);
 	 endseq
@@ -188,7 +185,7 @@ module mkApp_HW2 (BC_HW2_IFC);
 	 // Assertion: the only responses in f_rsps[] should be RSP_RD_DATA responses
 	 // for the parameter read requests
 	 if (rsp.cmd != RSP_RD_DATA) begin
-	    $display ("INTERNAL ERROR: mkApp_HW2: memory response for parameter-read is of wrong RS_TYPE",
+	    $display ("INTERNAL ERROR: mkApp_HW2: memory response for parameter-read is of wrong RSP_TYPE",
 		      fshow (rsp.cmd));
 	    $display ("    Response is: ", fshow (rsp));
 	    $finish (1);
@@ -196,6 +193,21 @@ module mkApp_HW2 (BC_HW2_IFC);
 
 	 return truncate (rsp.data);
       endactionvalue
+   endfunction
+
+   function Action recv_wr_rsp (Integer param_id);
+      action
+	 let rsp <- toGet (f_rsps [param_id * 2]).get;
+
+	 // Assertion: the only responses in f_rsps[] should be RSP_WR_CMP responses
+	 // for the paramter write requests
+	 if (rsp.cmd != RSP_WR_CMP) begin
+	    $display ("INTERNAL ERROR: mkApp_HW2: memory response for parameter-write is of wrong RSP_TYPE",
+		      fshow (rsp.cmd));
+	    $display ("    Response is: ", fshow (rsp));
+	    $finish (1);
+	 end
+      endaction
    endfunction
 
    // ----------------------------------------------------------------
@@ -250,8 +262,9 @@ module mkApp_HW2 (BC_HW2_IFC);
 	    rg_partial_sum <= rg_partial_sum + chan_sum;
 	 endaction
 
-	 // Write final (per-FPGA) sum back to param block
+	 // Write final (per-FPGA) sum back to param block, and drain the response
 	 send_wr_req (rg_param_block_addr, param_PARTIAL_SUM, rg_partial_sum);
+	 recv_wr_rsp (param_PARTIAL_SUM);
       endseq
       );
 
@@ -307,6 +320,9 @@ interface ChanVadd_IFC;
    interface BC_MC_Client  mc_client;
 endinterface
 
+typedef enum { RUN_STATE_IDLE, RUN_STATE_INIT, RUN_STATE_RUNNING } RUN_STATE
+   deriving (Bits, Eq, FShow);
+
 (* synthesize *)
 module mkChanVadd (ChanVadd_IFC);
    // These are only needed for $displays
@@ -319,7 +335,7 @@ module mkChanVadd (ChanVadd_IFC);
    // The purpose of rg_run_state is to disable the put_rsp method while the
    // parent is still reading the initial params from mem; i.e., so that this method
    // doesn't compete for read responses until we've started the actual computation.
-   Reg #(Bit #(2))        rg_run_state   <- mkReg (0);
+   Reg #(RUN_STATE)       rg_run_state   <- mkReg (RUN_STATE_IDLE);
 
    Reg #(Bool)            rg_evenNotOdd  <- mkRegU;    // Even or odd words?
 
@@ -347,10 +363,11 @@ module mkChanVadd (ChanVadd_IFC);
 
    // Write sequencing
    Reg #(Bit #(16))       rg_wr_pc       <- mkRegU;
+   Reg #(Bit #(16))       rg_wr_rsp_drain_count <- mkRegU;
 
    // Mem req/rsp fifos
    FIFOF #(BC_MC_REQ)     fifo_reqs       <- mkFIFOF;
-   FIFOF #(BC_Data)       fifo_rd_rsps    <- mkFIFOF;
+   FIFOF #(BC_MC_RSP)     fifo_rsps       <- mkFIFOF;
 
    // This reg buffers the J'th response from vector 1 while we're
    // waiting for the J'th response from vector 2
@@ -384,16 +401,23 @@ module mkChanVadd (ChanVadd_IFC);
    // 'start' method, it had timing closure issues due to high fanout
    // into the 'cache' that is inside the BRAM fifo.
 
-   rule rl_init (rg_run_state == 1);
+   rule rl_init (rg_run_state == RUN_STATE_INIT);
       fifo_sums.clear;
 
       rg_reading     <= True;
+      rg_rd_active_2 <= (rg_rd_base_2 < rg_rd_limit_2);
+
       rg_rd_pc       <= 0;
       rg_vin1_turn   <= True;     // Alternates reads from vin1 and vin2
-      rg_wr_pc       <= 0;
-      rg_partial_sum <= 0;
+
       rg_x1_valid    <= False;
-      rg_run_state   <= 2;
+      rg_partial_sum <= 0;
+
+      rg_wr_pc       <= 0;
+      rg_wr_active   <= (rg_wr_base < rg_wr_limit);
+      rg_wr_rsp_drain_count <= 0;
+
+      rg_run_state   <= RUN_STATE_RUNNING;
    endrule
 
    // ----------------------------------------------------------------
@@ -437,14 +461,14 @@ module mkChanVadd (ChanVadd_IFC);
    // and accumulate into partial sum
    // Alternates between these rules, receiving data from vin1 and vin2, resply.
 
-   rule rl_get_x1 (! rg_x1_valid);
-      rg_x1       <= fifo_rd_rsps.first; fifo_rd_rsps.deq;    // from vin1
+   rule rl_get_x1 ((! rg_x1_valid) && (fifo_rsps.first.cmd == RSP_RD_DATA));
+      rg_x1       <= fifo_rsps.first.data; fifo_rsps.deq;    // from vin1
       rg_x1_valid <= True;
    endrule
 
-   rule rl_get_x2_sum_and_gen_wr_reqs (rg_x1_valid);
+   rule rl_get_x2_sum_and_gen_wr_reqs (rg_x1_valid && (fifo_rsps.first.cmd == RSP_RD_DATA));
       let x1 = rg_x1;
-      let x2 = fifo_rd_rsps.first;  fifo_rd_rsps.deq;    // from vin2
+      let x2 = fifo_rsps.first.data;  fifo_rsps.deq;    // from vin2
       let x3 = x1 + x2;
 
       rg_x1_valid <= False;
@@ -459,6 +483,7 @@ module mkChanVadd (ChanVadd_IFC);
    // ----------------------------------------------------------------
    // Write buffered sums to mem
    
+   (* descending_urgency = "rg_wr_gen, rg_wr_rsp_drain" *)
    rule rg_wr_gen ((! rg_reading) && rg_wr_active);
       // Write x3 to vout.
       let x3 = fifo_sums.first; fifo_sums.deq;
@@ -466,6 +491,7 @@ module mkChanVadd (ChanVadd_IFC);
       let req  = BC_MC_REQ {cmd_sub: REQ_WR, rtnctl: 0, len: BC_8B,
 			    vadr: rg_wr_base, data: x3};
       fifo_reqs.enq (req);
+      rg_wr_rsp_drain_count <= rg_wr_rsp_drain_count + 1;
       
       // Calculate next write address
       let next_base  = addr_incr (rg_wr_base);
@@ -481,6 +507,11 @@ module mkChanVadd (ChanVadd_IFC);
       rg_wr_pc <= rg_wr_pc + 1;
    endrule
 
+   rule rg_wr_rsp_drain ((rg_wr_rsp_drain_count != 0) && (fifo_rsps.first.cmd == RSP_WR_CMP));
+      fifo_rsps.deq;
+      rg_wr_rsp_drain_count <= rg_wr_rsp_drain_count - 1;
+   endrule
+
    // ----------------------------------------------------------------
    // INTERFACE
 
@@ -488,7 +519,7 @@ module mkChanVadd (ChanVadd_IFC);
 			Bool  evenNotOdd,
 			BC_Addr rd_base_1,  BC_Addr rd_limit_1,
 			BC_Addr rd_base_2,  BC_Addr rd_limit_2,
-			BC_Addr wr_base,    BC_Addr wr_limit) if (rg_run_state == 0);
+			BC_Addr wr_base,    BC_Addr wr_limit) if (rg_run_state == RUN_STATE_IDLE);
       rg_aeid        <= aeid;
       rg_chan        <= chan;
 
@@ -499,17 +530,17 @@ module mkChanVadd (ChanVadd_IFC);
 
       rg_rd_base_2   <= rd_base_2;
       rg_rd_limit_2  <= rd_limit_2;
-      rg_rd_active_2 <= (rd_base_2 < rd_limit_2);
 
       rg_wr_base     <= wr_base;
       rg_wr_limit    <= wr_limit;
-      rg_wr_active   <= (wr_base < wr_limit);
 
-      rg_run_state   <= 1;
+      rg_run_state   <= RUN_STATE_INIT;
    endmethod
 
-   method ActionValue #(BC_Data) result () if ((rg_run_state == 2) && (! rg_wr_active));
-      rg_run_state <= 0;
+   method ActionValue #(BC_Data) result () if ((rg_run_state == RUN_STATE_RUNNING)
+					       && (! rg_wr_active)
+					       && (rg_wr_rsp_drain_count == 0));
+      rg_run_state <= RUN_STATE_IDLE;
       return rg_partial_sum;
    endmethod
 
@@ -517,15 +548,8 @@ module mkChanVadd (ChanVadd_IFC);
       interface Client req_rsp;
 	 interface Get request = toGet (fifo_reqs);
 	 interface Put response;
-	    method Action put (BC_MC_RSP rsp) if (rg_run_state == 2);
-	       case (rsp.cmd)
-		  RSP_RD_DATA: fifo_rd_rsps.enq (rsp.data);
-		  RSP_WR_CMP : noAction; // just discard write-responses
-		  default: begin
-			      $display ("INTERNAL ERROR: mem response is not RD_DATA or WR_CMP: ", fshow (rsp));
-			      $finish (1);
-			   end
-	       endcase
+	    method Action put (BC_MC_RSP rsp) if (rg_run_state == RUN_STATE_RUNNING);
+	       fifo_rsps.enq (rsp);
 	    endmethod
 	 endinterface
       endinterface

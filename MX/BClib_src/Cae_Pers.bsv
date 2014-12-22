@@ -106,7 +106,7 @@ interface Cae_Pers_IFC;
 
    // ----------------------------------------------------------------
    // Dispatch Interface
-   (* prefix="" *)      interface BC_Dispatch_Signal_IFC dispatch_signal_ifc;
+   (* prefix="" *)     interface BC_Dispatch_Signal_IFC dispatch_signal_ifc;
 
    // ----------------------------------------------------------------
    // MC Interfaces
@@ -149,7 +149,9 @@ endinterface
 // The top-level module, instantiated by Convey's PDK
 // (with Type 1 memory interfaces)
 
-(* synthesize, clock_prefix = "", reset_prefix = "",
+// reset_prefix = "",
+
+(* synthesize, clock_prefix = "",
    default_clock_osc = "clk",
    default_gate_inhigh,
    default_reset = "i_reset" *)
@@ -207,49 +209,49 @@ module cae_pers (Cae_Pers_IFC);
 
    method mc_rq_vld;
       Vector #(16, Bit #(1)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_vld;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_vld;
       return v;
    endmethod
 
    method mc_rq_cmd;
       Vector #(16, Bit #(3)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_cmd;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_cmd;
       return v;
    endmethod
 
    method mc_rq_sub;
       Vector #(16, Bit #(4)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_sub;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_sub;
       return v;
    endmethod
 
    method mc_rq_len;
       Vector #(16, Bit #(2)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_len;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_len;
       return v;
    endmethod
 
    method mc_rq_vadr;
       Vector #(16, Bit #(48)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_vadr;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_vadr;
       return v;
    endmethod
 
    method mc_rq_rtnctl;
       Vector #(16, Bit #(32)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_rtnctl;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_rtnctl;
       return v;
    endmethod
 
    method mc_rq_data;
       Vector #(16, Bit #(64)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_data;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_data;
       return v;
    endmethod
 
    method Action m_rq_stall (Vector #(16, Bit #(1)) mc_rq_stall);
       for (Integer j = 0; j < 16; j = j + 1)
-	 mc_ifcs [j].m_rq_stall (mc_rq_stall [j]);
+	 mc_ifcs [j].m_req_stall (mc_rq_stall [j]);
    endmethod
 
    // Response Port
@@ -264,20 +266,20 @@ module cae_pers (Cae_Pers_IFC);
 
    method mc_rs_stall;
       Vector #(16, Bit #(1)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rs_stall;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rsp_stall;
       return v;
    endmethod
 
    // Write Flush
    method mc_rq_flush;
       Vector #(16, Bit #(1)) v;
-      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_rq_flush;
+      for (Integer j = 0; j < 16; j = j + 1) v [j] = mc_ifcs [j].mc_req_flush;
       return v;
    endmethod
 
    method Action m_rs_flush_cmplt (Vector #(16, Bit #(1)) mc_rs_flush_cmplt);
       for (Integer j = 0; j < 16; j = j + 1)
-	 mc_ifcs [j].m_rs_flush_cmplt (mc_rs_flush_cmplt [j]);
+	 mc_ifcs [j].m_rsp_flush_cmplt (mc_rs_flush_cmplt [j]);
    endmethod
 
    // ----------------

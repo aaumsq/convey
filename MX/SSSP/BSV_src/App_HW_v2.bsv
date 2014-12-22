@@ -85,7 +85,6 @@ module mkApp_HW (BC_HW_IFC);
 	       hw2.start (aeid, arg);
 	    endaction
 	    hw2.waitTillDone;
-	    delay (200);    // to allow final writes to reach memory.
 	    simple_dispatch_app_ifc.put_caep_result.put (0); // signal caep inst completion
 	 endseq
       endseq
@@ -189,6 +188,13 @@ module mkApp_HW2 (BC_HW2_IFC);
       endaction
    endfunction
 
+   function Action recv_wr_rsp (Integer param_id);
+      action
+	 let rsp = f_rsps.first; f_rsps.deq;
+	 await (rsp.rtnctl == fromInteger (param_id));
+      endaction
+   endfunction
+
    // ----------------------------------------------------------------
    // Instantiate M vadders, and connect them to the mem tree
 
@@ -250,8 +256,10 @@ module mkApp_HW2 (BC_HW2_IFC);
 	    let vadder_sum <- v_vadders [rg_m].result;
 	    rg_partial_sum <= rg_partial_sum + vadder_sum;
 	 endaction
-	 // Write final (per-FPGA) sum back to param block
+
+	 // Write final (per-FPGA) sum back to param block, and drain response
 	 send_wr_req (rg_param_block_addr, param_PARTIAL_SUM, rg_partial_sum);
+	 recv_wr_rsp (param_PARTIAL_SUM);
       endseq
       );
 
@@ -339,11 +347,16 @@ module mkVadder (Vadder_IFC);
    Reg #(BC_Addr)         rg_wr_base   <- mkRegU;
    Reg #(BC_Addr)         rg_wr_limit  <- mkRegU;
    Reg #(Bool)            rg_wr_active <- mkReg (False);
+   Reg #(Bit #(16))       rg_wr_rsp_1_drain_count <- mkRegU;
+   Reg #(Bit #(16))       rg_wr_rsp_2_drain_count <- mkRegU;
 
    // Mem req/rsp fifos
    FIFOF #(BC_MC_REQ)                f_reqs_1  <- mkFIFOF;
+   FIFOF #(BC_MC_RSP)                f_rsps_1  <- mkFIFOF;
    CompletionBuffer2 #(100, BC_Data) cb_rsps_1 <- mkCompletionBuffer2;
+
    FIFOF #(BC_MC_REQ)                f_reqs_2  <- mkFIFOF;
+   FIFOF #(BC_MC_RSP)                f_rsps_2  <- mkFIFOF;
    CompletionBuffer2 #(100, BC_Data) cb_rsps_2 <- mkCompletionBuffer2;
 
    // ----------------------------------------------------------------
@@ -386,6 +399,21 @@ module mkVadder (Vadder_IFC);
    endrule
 
    // ----------------------------------------------------------------
+   // Process read-responses into the completion buffers (reordering)
+
+   rule rl_rd_rsps_1 (f_rsps_1.first.cmd == RSP_RD_DATA);
+      let rsp = f_rsps_1.first; f_rsps_1.deq;
+      let tag = unpack (truncate (rsp.rtnctl));
+      cb_rsps_1.complete.put (tuple2 (tag, rsp.data));
+   endrule
+
+   rule rl_rd_rsps_2 (f_rsps_2.first.cmd == RSP_RD_DATA);
+      let rsp = f_rsps_2.first; f_rsps_2.deq;
+      let tag = unpack (truncate (rsp.rtnctl));
+      cb_rsps_2.complete.put (tuple2 (tag, rsp.data));
+   endrule
+
+   // ----------------------------------------------------------------
    // Receive a 64b word from each of vin1 and vin2, write sum to vout,
    // and accumulate into partial sum
 
@@ -396,8 +424,14 @@ module mkVadder (Vadder_IFC);
 
       // Write x3 to vout. Alternate between even and odd ports.
       let wr_req       = BC_MC_REQ {cmd_sub: REQ_WR, rtnctl: 0, len:BC_8B, vadr: rg_wr_base, data: x3};
-      let f_reqs = ((rg_wr_base [3] == 1'b0) ? f_reqs_1 : f_reqs_2 );
-      f_reqs.enq (wr_req);
+      if (rg_wr_base [3] == 1'b0) begin
+	 f_reqs_1.enq (wr_req);
+	 rg_wr_rsp_1_drain_count <= rg_wr_rsp_1_drain_count + 1;
+      end
+      else begin
+	 f_reqs_2.enq (wr_req);
+	 rg_wr_rsp_2_drain_count <= rg_wr_rsp_2_drain_count + 1;
+      end
 
       // Accumulate x3 in partial sum
       rg_partial_sum <= rg_partial_sum + x3;
@@ -406,36 +440,20 @@ module mkVadder (Vadder_IFC);
       rg_wr_active <= (next_base < rg_wr_limit);
    endrule
 
+   (* descending_urgency = "rl_sum_and_gen_wr_reqs, rl_wr_rsp_1_drain" *)
+   rule rl_wr_rsp_1_drain ((rg_wr_rsp_1_drain_count != 0) && (f_rsps_1.first.cmd == RSP_WR_CMP));
+      f_rsps_1.deq;
+      rg_wr_rsp_1_drain_count <= rg_wr_rsp_1_drain_count - 1;
+   endrule
+
+   (* descending_urgency = "rl_sum_and_gen_wr_reqs, rl_wr_rsp_2_drain" *)
+   rule rl_wr_rsp_2_drain ((rg_wr_rsp_2_drain_count != 0) && (f_rsps_2.first.cmd == RSP_WR_CMP));
+      f_rsps_2.deq;
+      rg_wr_rsp_2_drain_count <= rg_wr_rsp_2_drain_count - 1;
+   endrule
+
    // ----------------------------------------------------------------
    // INTERFACE
-
-   function BC_Mem_Client mkMem_Client (FIFOF #(BC_MC_REQ) f_reqs,
-					CompletionBuffer2 #(100, BC_Data) cb_rsps);
-      return interface Client;
-		interface Get request = toGet (f_reqs);
-		interface Put response;
-		   method Action put (BC_MC_RSP  rsp);
-		      case (rsp.cmd)
-			 RSP_RD_DATA: begin
-					 let tag = unpack (truncate (rsp.rtnctl));
-					 cb_rsps.complete.put (tuple2 (tag, rsp.data));
-				      end
-			 RSP_WR_CMP : noAction; // just discard write-responses
-			 default: begin
-				     $display ("INTERNAL ERROR: mem response is not RD_DATA or WR_CMP: ", fshow (rsp));
-				     $finish (1);
-				  end
-		      endcase
-		   endmethod
-		endinterface
-	     endinterface;
-   endfunction
-
-   let ifc_e = mkMem_Client (f_reqs_1, cb_rsps_1);
-
-   let ifc_o = mkMem_Client (f_reqs_2, cb_rsps_2);
-   
-   // ----------------
 
    method Action start (BC_AEId aeid, BC_MC chan,
 			BC_Addr rd_base_1,  BC_Addr rd_limit_1,
@@ -448,6 +466,9 @@ module mkVadder (Vadder_IFC);
       rg_rd_base_2   <= rd_base_2;      rg_rd_limit_2  <= rd_limit_2;
       rg_wr_base     <= wr_base;        rg_wr_limit    <= wr_limit;
 
+      rg_wr_rsp_1_drain_count <= 0;
+      rg_wr_rsp_2_drain_count <= 0;
+
       rg_initialize  <= True;
    endmethod
 
@@ -455,7 +476,8 @@ module mkVadder (Vadder_IFC);
       return rg_partial_sum;
    endmethod
 
-   interface mem_client_pair = tuple2 (ifc_e, ifc_o);
+   interface mem_client_pair = tuple2 (fifofs_to_client (f_reqs_1, f_rsps_1),
+				       fifofs_to_client (f_reqs_2, f_rsps_2));
 endmodule
 
 // ================================================================
