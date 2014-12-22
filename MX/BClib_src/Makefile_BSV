@@ -1,0 +1,47 @@
+# Copyright (c) 2012-2015 Bluespec, Inc., All Rights Reserved
+# Distributed under license
+
+# This Makefile is for pre-compiling the BSV parts of the BClib library
+# after the sources have been installed in a customer installation.
+# I.e., it is only done once, as part of installation, after which
+# applications just use the pre-compiled object and verilog files.
+
+BSCFLAGS = -aggressive-conditions -no-show-method-conf -no-warn-action-shadowing
+
+default_BSV:
+	@echo "INFO: Compiling BClib BSV files for Bluesim"
+	make bsc_bsim
+	@echo "INFO: Compiling BClib BSV files for Verilog"
+	make bsc_v
+
+# ----------------------------------------------------------------
+# For Bluesim
+
+BSCDIRS_BSIM = -simdir $(BCLIB_OBJ_BSIM)  -bdir $(BCLIB_OBJ_BSIM)  -info-dir $(BCLIB_OBJ_BSIM)
+
+.PHONY: typecheck
+typecheck:
+	@echo Typechecking...
+	bsc -u $(BSCDIRS_BSIM) $(BSCFLAGS) -p .:%/Prelude:%/Libraries  Import_All.bsv
+	@echo Typechecking finished
+
+.PHONY: bsc_bsim
+bsc_bsim:
+	@echo Compiling...
+	bsc -u -sim $(BSCDIRS_BSIM) $(BSCFLAGS) -p .:%/Prelude:%/Libraries Import_All.bsv
+	rm -f $(BCLIB_OBJ_BSIM)/Import_All.b?
+	@echo Compilation finished
+
+# ----------------------------------------------------------------
+# For Verilog
+
+BSCDIRS_V = -vdir $(BCLIB_VDIR)  -bdir $(BCLIB_OBJ_V)  -info-dir $(BCLIB_OBJ_V)
+
+.PHONY: bsc_v
+bsc_v:
+	@echo Verilog generation ...
+	bsc -u -verilog $(BSCDIRS_V) $(BSCFLAGS) -p .:%/Prelude:%/Libraries Import_All.bsv
+	rm -f $(BCLIB_OBJ_V)/Import_All.b?
+	@echo Verilog generation finished
+
+# ----------------------------------------------------------------

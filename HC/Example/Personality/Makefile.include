@@ -1,0 +1,68 @@
+#
+# Copyright 2011 Convey Computer Corp. 
+#
+
+# ----------------------------------------------------------------
+# This section added to original Convey Makefile.include, for BClib builds
+
+# This allows Xilinx XST to exploit two cores (for faster synthesis)
+export XILINX_THREADS = 2
+
+# This points at Verilog files in Bluespec's standard library
+USER_VERILOG_DIRS += $(BLUESPECDIR)/Verilog
+
+# This tells XST to ignore main.v in Bluespec's standard library
+USER_VERILOG_SKIP_LIST += $(BLUESPECDIR)/Verilog/main.v
+
+# This points at the BClib library
+USER_VERILOG_DIRS += $(BCLIB)/BClib_verilog
+# ----------------------------------------------------------------
+
+
+# DEFAULT LOCATION FOR DEVELOPMENT
+# export CNY_PDK = /opt/convey/pdk
+export CNY_PDK = /opt/convey/pdk_mx
+export CNY_PDK_REV = latest
+
+# Uncomment one of these for your particular Convey platform
+# export CNY_PDK_PLATFORM = hc-1
+# export CNY_PDK_PLATFORM = hc-1ex
+export CNY_PDK_PLATFORM = MX
+
+# The following allows designs with the older Convey HC mem interfaces
+# to work on the newer Convey MX platforms
+# export PERS_IF_TYPE = 0
+
+# Uncomment this to build with Convey PDK's memory crosssbar
+# export MC_XBAR = 1
+
+# Uncomment this to build with Convey PDK's facilities for read ordering
+export MC_READ_ORDER = 1
+
+# Use the default 150 MHz clock frequency for the user app
+export CLK_PERS_FREQ = 150
+
+# Uncomment this to build with Convey PDK's memory stats instrumentation
+# export PERFMON = 1
+
+# Personality supports asynchronous core clock
+#   CLK_PERS_RATIO = 0 for synchronous (default)
+#   CLK_PERS_RATIO = 2 for async frequency between 75 and 300 MHz
+
+# We don't use HDL simulation, but the PDK seems to insist on a def for CNY_PDK_HDLSIM
+export CNY_PDK_HDLSIM = Synopsys
+
+# DO NOT REMOVE ITEMS BELOW THIS LINE
+include $(CNY_PDK)/$(CNY_PDK_REV)/lib/MakefileInclude.cnypdk
+
+# NOTE: The following stuff MUST FOLLOW the 'include' line above, in
+# order to override the defs therein. It defines the Verilog macro
+# BSV_POSITIVE_RESET for the Xilinx Verilog tools
+
+XILINX_XST_OPTIONS = -ifn bsv.xst -intstyle xflow
+
+cae_fpga.ngc:  bsv.xst
+
+bsv.xst: cae_fpga.xst
+	cat cae_fpga.xst > bsv.xst
+	echo "-define {BSV_POSITIVE_RESET=1}" >> bsv.xst

@@ -1,0 +1,86 @@
+Copyright (c) 2012-2015 Bluespec, Inc., All Rights Reserved
+
+This is BClib, the "Bluespec Convey library",
+for developing SW + HW (C + BSV) apps on Convey platforms.
+
+The following is a user-manual, including tutorials and library documentation:
+    Doc/BClib_manual.pdf
+
+One-time installation task at each site:
+    This tar file is first unpacked in a shared location, such as
+
+        /tools/BClib/BClib-2014.12.C/
+
+    and a 'latest' symbolic link is made to point at it:
+
+        ln -s -f  /tools/BClib/BClib-2014.12.C  /tools/BClib/latest
+
+    Let us call this directory BCLIB_DISTRO.
+
+    Make sure you have Bluespec tools installed, and that you can run
+    'bsc', the Bluespec compiler/synthesis tool.  Then, if you have a
+    Convey MX platform, build the library as follows:
+
+        % cd $BCLIB_DISTRO/MX/BClib_src
+        % make
+
+    This should pre-compile everything in BClib into newly created directories:
+        $BCLIB_DISTRO/MX/BClib_obj_bsim
+        $BCLIB_DISTRO/MX/BClib_obj_v
+        $BCLIB_DISTRO/MX/BClib_verilog
+
+    If you have a Convey HC platform, build the library as follows:
+
+        % cd $BCLIB_DISTRO/HC/BClib_src
+        % make
+
+    This should pre-compile everything in BClib into newly created directories:
+        $BCLIB_DISTRO/HC/BClib_obj_bsim
+        $BCLIB_DISTRO/HC/BClib_obj_v
+        $BCLIB_DISTRO/HC/BClib_verilog
+
+    You should set the environment variable BCLIB to point at:
+        $BCLIB_DISTRO/MX    if you're using a Convey MX platform
+        $BCLIB_DISTRO/HC    if you're using a Convey HC platform
+
+----------------------------------------------------------------
+RELEASE NOTES [December 20, 2014]
+
+BClib was originally released in 2012 for Convey HC platforms
+    (HC-1, HC-1ex, HC-2, HC-2ex).
+This release also contains support for the Convey MX platform.
+
+The release is now organized into separate HC and MX sub-directories.
+Unless you are using both HC and MX platforms, only one of these
+directories is likely to be of interest to you.
+
+The primary differences between the HC and MX libraries are:
+
+- HC uses the older Type 0 memory interface.
+    - The BSV interfaces had separate methods to send memory read and
+          write requests.
+    - Only read requests had responses.
+
+- MC uses the newer Type 1 memory interface.
+    - The BSV interfaces have a single method for sending all types of
+        memory requests: reads, writes, and atomic memory ops.
+    - Full/Empty memory requests are not yet supported.
+    - All types of memory requests have responses (including writes).
+
+Both the HC and MX libraries in this release completeley remove the
+interfaces and stubs for direct AE-to-AE communication. Prev. releases
+did not implement this functionality either, but had stubs that may
+have taken up some logic resources.  This release not only removes it
+from the BClib and BSV applications, but the Makefile.include to build
+for hardware includes the setting AE_AE_IF=0 so that Convey's PDK also
+removes this logic.
+
+Not everything has been updated yet for MX.  Specifically, BClib and
+the basic vector-add example:
+    Example/BSV_src/App_HW_v0.bsv
+have been upgraded and tested.
+
+The user manual (Doc/BClib_manual.pdf) has not yet been updated to
+reflect MX support.
+
+----------------------------------------------------------------

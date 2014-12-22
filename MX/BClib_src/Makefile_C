@@ -1,0 +1,41 @@
+# Copyright (c) 2012-2015 Bluespec, Inc., All Rights Reserved
+# Distributed under license
+
+# This Makefile is for pre-compiling the C parts of the BClib library
+# after the sources have been installed in a customer installation.
+# I.e., it is only done once, as part of installation, after which
+# applications just use the pre-compiled object and verilog files.
+
+
+CC = cc
+LD = cc
+CFLAGS = -fPIC -O3 -D_FILE_OFFSET_BITS=64
+
+OBJECTS = BC_linkage_Bluesim.o  BC_linkage_HW.o
+
+# ----------------------------------------------------------------
+
+.PHONY: default_C
+default_C:
+	@echo "INFO: Compiling BClib C files for Bluesim"
+	make cc_bsim
+#	@echo "INFO: Compiling BClib C files for Verilog"
+#	make cc_v
+
+# ----------------------------------------------------------------
+# For Bluesim
+
+.PHONY: cc_bsim
+cc_bsim:
+	cp -p BC_linkage.h  $(BCLIB_OBJ_BSIM)/BC_linkage.h
+	$(CC)  -DFOR_SIM  -c  -o $(BCLIB_OBJ_BSIM)/BC_linkage_Bluesim.o  $(CFLAGS)  BC_linkage.c
+
+# ----------------------------------------------------------------
+# For HW
+
+.PHONY: cc_v
+cc_v:
+	cp -p BC_linkage.h  $(BCLIB_OBJ_V)/BC_linkage.h
+	$(CC)  -DFOR_HW   -c  -o $(BCLIB_OBJ_V)/BC_linkage_HW.o  $(CFLAGS)  BC_linkage.c
+
+# ----------------------------------------------------------------

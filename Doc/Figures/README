@@ -1,0 +1,26 @@
+Each figure for the document is produced as follows:
+
+- In the PowerPoint file Figures.pptx, create a fresh blank-template
+      slide and draw the figure
+
+- In PowerPoint, with this slide as the current slide,
+     - Select menu item:    File -> Save As Pictures
+          and give it the file name for this figure (Fig_foo.jpg)
+          and save it in this Figures directory
+     - It will save the entire current slide as a JPEG image file (Fig_foo.jpg)
+
+- Open Fig_foo.jpg in an image-manipulation program and crop the
+      figure to a rectangle that tightly encloses the figure contents,
+      and save it.
+    - On Mac OS X, you can use the default "Preview" program that opens JPEG files
+    - On Linux, presumably one can use GIMP
+
+- This final Fig_foo.jpg can now be imported into the LaTeX file for
+    the document (see several examples of such imports already in the
+    LaTeX file).
+
+Note: There may still be some legacy figures in the directory that
+   were created using an older process, which used Inkscape for
+   drawing (.svg file) and exported it as a .pdf which is imported by
+   LaTex.  These should disappear after being redrawn using the new
+   technique.

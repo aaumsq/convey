@@ -1,0 +1,25 @@
+This is an example code, "Blocked Matrix Multiply", for Convey
+platforms, written in BSV and using BClib.
+
+See Notes_on_Blocked_Matmult.pdf for more information, and also
+extensive comments at the top of the file BSV_src/MatMult.bsv.
+
+To compile, link and run in Bluesim:    make compile link simulate
+
+To deploy on Convey hardware:
+    make verilog        // to generate Verilog in Personality/verilog
+
+        // Edit the file Personality/Makefile.include to ensure the
+        // following options are present:
+        //    export MC_XBAR = 1
+        //    export MC_READ_ORDER = 1
+
+    cd Personality/phys
+    make cae_fpga.xst
+        // Edit the file cae_fpga.xst as follows:
+        //    -fsm_extract YES => NO
+        //    -resource_sharing YES => NO
+        //    -equivalent_register_removal YES => NO
+    make    // to create the bitfile
+
+    // Deploy the bitfile as described in the BClib manual
