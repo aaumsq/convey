@@ -3,7 +3,7 @@
 # Assumes BCLIB_OBJ_BSIM defined in environment or by parent make
 
 BUILD_DIR = ../build_bsim
-
+BCLIB_OBJ_BSIM = ../../BClib_obj_bsim/
 TARGET ?= SIM
 
 CC = cc
@@ -18,8 +18,8 @@ default: $(OBJECTS)
 
 # ----------------------------------------------------------------
 
-$(BUILD_DIR)/App_SW.o: App_SW.c  timing.h  instrumentation.h
-	$(CC)  -c  $(CFLAGS)  -o $(BUILD_DIR)/App_SW.o  App_SW.c
+$(BUILD_DIR)/App_SW.o: App_SW.cpp  timing.h  instrumentation.h
+	$(CC)  -c  $(CFLAGS)  -o $(BUILD_DIR)/App_SW.o  App_SW.cpp
 
 # ----------------------------------------------------------------
 
