@@ -226,16 +226,17 @@ int App_SW (const char *file)
 
 // ================================================================
 // MAIN for Bluesim (this is pthread_create'd by the BSV testbench)
-
+extern "C" {
 void *bc_SW_main (void * ignored)
 {
-    const char* s = getenv("VECTOR_SIZE");
+    const char* s = getenv("INPUT_FILE");
 
-    if (s == NULL) s = "100";
+    if (s == NULL) s = "./test.edgelist";
 
     App_SW (s);
 
     return NULL;
+}
 }
 
 // ================================================================
@@ -265,7 +266,7 @@ int main (int argc, char *argv[])
     if (argc == 2)
         return App_SW (argv [1]);
     else {
-        const char* s = getenv("VECTOR_SIZE");
+        const char* s = getenv("INPUT_FILE");
         return App_SW (s);
     }
 }

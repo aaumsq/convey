@@ -12,10 +12,10 @@
 // Or call fprint_delta_time to print it
 // ================================================================
 
-extern void record_start_time (void);
+extern "C" void record_start_time (void);
 
-extern void record_finish_time (void);
+extern "C" void record_finish_time (void);
 
-extern void delta_time (long long *full_ns, long *s, long *ms, long *us, long *ns);
+extern "C" void delta_time (long long *full_ns, long *s, long *ms, long *us, long *ns);
 
-extern void fprint_delta_time (FILE *fp);
+extern "C" void fprint_delta_time (FILE *fp);

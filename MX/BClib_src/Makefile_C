@@ -28,7 +28,7 @@ default_C:
 .PHONY: cc_bsim
 cc_bsim:
 	cp -p BC_linkage.h  $(BCLIB_OBJ_BSIM)/BC_linkage.h
-	$(CC)  -DFOR_SIM  -c  -o $(BCLIB_OBJ_BSIM)/BC_linkage_Bluesim.o  $(CFLAGS)  BC_linkage.c
+	$(CC)  -DFOR_SIM  -c  -o $(BCLIB_OBJ_BSIM)/BC_linkage_Bluesim.o  $(CFLAGS)  BC_linkage.cpp
 
 # ----------------------------------------------------------------
 # For HW
@@ -36,6 +36,6 @@ cc_bsim:
 .PHONY: cc_v
 cc_v:
 	cp -p BC_linkage.h  $(BCLIB_OBJ_V)/BC_linkage.h
-	$(CC)  -DFOR_HW   -c  -o $(BCLIB_OBJ_V)/BC_linkage_HW.o  $(CFLAGS)  BC_linkage.c
+	$(CC)  -DFOR_HW   -c  -o $(BCLIB_OBJ_V)/BC_linkage_HW.o  $(CFLAGS)  BC_linkage.cpp
 
 # ----------------------------------------------------------------

@@ -23,8 +23,8 @@ $(BUILD_DIR)/App_SW.o: App_SW.cpp  timing.h  instrumentation.h
 
 # ----------------------------------------------------------------
 
-$(BUILD_DIR)/timing.o: timing.h timing.c
-	$(CC)  -c  $(CFLAGS)  -o $(BUILD_DIR)/timing.o  timing.c
+$(BUILD_DIR)/timing.o: timing.h timing.cpp
+	$(CC)  -c  $(CFLAGS)  -o $(BUILD_DIR)/timing.o  timing.cpp
 
 # ----------------------------------------------------------------
 

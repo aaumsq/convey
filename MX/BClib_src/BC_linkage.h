@@ -37,7 +37,7 @@
 // ****************************************************************
 // Assumed external name for C app's top-level function (entry point)
 
-extern void * bc_SW_main (void *args);
+extern "C" void * bc_SW_main (void *args);
 
 // ================================================================
 // On Convey HW, there is 'host-side' memory and 'coprocessor-side' memory,
@@ -63,22 +63,22 @@ typedef enum { False, True } Bool;
 // To avoid alignment issues, we typically use uint64_t for all
 // args/results communicated between host and FPGA
 
-extern  uint64_t  ptr_to_ui64    (void *p);
-extern  void *    ui64_to_ptr    (uint64_t x);
-extern  uint64_t  double_to_ui64 (double x);
-extern  double    ui64_to_double (uint64_t x);
+extern "C" uint64_t  ptr_to_ui64    (void *p);
+extern "C" void *    ui64_to_ptr    (uint64_t x);
+extern "C" uint64_t  double_to_ui64 (double x);
+extern "C" double    ui64_to_double (uint64_t x);
 
 // ================================================================
 // The following routine initializes the HW side of the hybrid platform
 
-extern void  bc_init_HW (char *personality_name);
+extern "C" void  bc_init_HW (char *personality_name);
 
 // ================================================================
 // This routine performs the call/return to the HW function.
 // The argument is typically a pointer to a parameter block in memory.
 // The result is the exception vector from the HW function (normally all zeros).
 
-extern uint64_t  bc_call_HW (uint64_t  x);
+extern "C" uint64_t  bc_call_HW (uint64_t  x);
 
 // ================================================================
 // The following mallocs either on the host or the FPGA side.
@@ -91,7 +91,7 @@ extern uint64_t  bc_call_HW (uint64_t  x);
 // If exit_on_failure is True, calls exit(1) on failure to malloc
 // else returns NULL on failure (just like malloc).
 
-extern void *bc_malloc (const char   *reason,
+extern "C" void *bc_malloc (const char   *reason,
 			size_t        size,
 			unsigned int  alignment,
 			Bool          fpga_side,
@@ -104,18 +104,18 @@ extern void *bc_malloc (const char   *reason,
 // that order by another thread, then the first thread should perform
 // W1, memory_fence, W2
 
-extern void  bc_memory_barrier (void);
+extern "C" void  bc_memory_barrier (void);
 
 // If the user thread is in an idle loop, it is good to yield the processor
 
-extern void  bc_sched_yield (void);
+extern "C" void  bc_sched_yield (void);
 
 // ****************************************************************
 // Reading and writing C memory from BSV, in simulation
 
-extern uint64_t bc_c_mem_read    (uint64_t len, uint64_t addr);
-extern void     bc_c_mem_write   (uint64_t len, uint64_t addr, uint64_t x);
-extern uint64_t bc_c_mem_atomic  (uint64_t cmd_sub, uint64_t len, uint64_t addr, uint64_t x64u);
+extern "C" uint64_t bc_c_mem_read    (uint64_t len, uint64_t addr);
+extern "C" void     bc_c_mem_write   (uint64_t len, uint64_t addr, uint64_t x);
+extern "C" uint64_t bc_c_mem_atomic  (uint64_t cmd_sub, uint64_t len, uint64_t addr, uint64_t x64u);
 
 // ****************************************************************
 

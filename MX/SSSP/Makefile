@@ -8,10 +8,10 @@ export BCLIB_OBJ_V    = $(BCLIB)/BClib_obj_v
 export BCLIB_VDIR     = $(BCLIB)/BClib_verilog
 
 # For Linux
-# LIBS	= -Xl -lpthread -Xl -lrt
+ LIBS	= -Xl -lpthread -Xl -lrt
 
 # For OS X
-LIBS	= -Xl -lpthread
+#LIBS	= -Xl -lpthread
 
 BSCDIRS_BSIM  = -simdir build_bsim  -bdir build_bsim  -info-dir build_bsim
 BSCDIRS_V     = -vdir Personality/verilog  -bdir build_v  -info-dir build_v
