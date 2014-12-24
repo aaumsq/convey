@@ -78,7 +78,7 @@ void readGraph(const char* file, Node *nodes, uint32_t &numNodes, Edge* edges, u
     
     in >> numNodes >> numEdges;
     //in >> numNodes >> ws >> numEdges >> ws;
-    
+    std::cout << "numNodes: " << numNodes << ", numEdges: " << numEdges << "\n";
     nodes = (Node*)calloc(numNodes, sizeof(Node));
     edges = (Edge*)calloc(numEdges, sizeof(Edge));
     
@@ -88,7 +88,7 @@ void readGraph(const char* file, Node *nodes, uint32_t &numNodes, Edge* edges, u
     while(in.good()) {
         in >> src >> dest >> weight;
         //in >> src >> ws >> dest >> ws >> weight >> ws;
-        //cout << "---" << src << " " << dest << " " << weight << endl;
+        std::cout << "---" << src << " " << dest << " " << weight << "\n";
         
         // If new node
         if(src != lastNode) {
@@ -166,12 +166,12 @@ int App_SW (const char *file)
     // ----------------------------------------------------------------
     // Create the param block, and initialize it
 
-    param_block_size = PARAM_SENTINEL * NUM_64b_WORDS_PER_BANK * sizeof (uint64_t);
+    param_block_size = (PARAM_SENTINEL+1) * NUM_64b_WORDS_PER_BANK * sizeof (uint64_t);
     posix_memalign ((void**) & param_block, 512, param_block_size);
     cny_cp_posix_memalign ((void**) & cp_param_block, 512, param_block_size);
 
     printf ("C: param_block addr: 0x%llx, size %0d (64b words)\n",
-	    ptr_to_ui64 (param_block), PARAM_SENTINEL * NUM_64b_WORDS_PER_BANK);
+            ptr_to_ui64 (param_block), (PARAM_SENTINEL+1) * NUM_64b_WORDS_PER_BANK);
 
     for (fpga = 0; fpga < NUM_FPGAs; fpga++) {
         param_block [PARAM_NODEPTR  * 8 + fpga] = ptr_to_ui64(cp_nodes);
@@ -180,8 +180,8 @@ int App_SW (const char *file)
         param_block [PARAM_NUMJOBS  * 8 + fpga] = numJobs;
         param_block [PARAM_OUTPUT   * 8 + fpga] = ptr_to_ui64(cp_output);
         param_block [PARAM_SENTINEL * 8 + fpga] = 0xCAFEF00D;
-        
-        printf ("C: params [fpga %0d] are %0llx 0x%llx 0x%llx 0x%lld 0x%llx 0x%lld\n", fpga,
+        printf("%0d\n", PARAM_SENTINEL * 8 + fpga);
+        printf ("C: params [fpga %0d] are %0llx 0x%llx 0x%llx %lld 0x%llx 0x%llx\n", fpga,
                 param_block [PARAM_NODEPTR  * 8 + fpga],
                 param_block [PARAM_EDGEPTR   * 8 + fpga],
                 param_block [PARAM_JOBSPTR   * 8 + fpga],
@@ -200,9 +200,9 @@ int App_SW (const char *file)
     // ----------------------------------------------------------------
     // Start the HW computation
 
-    printf ("C: calling HW with address of param block: 0x%0llx\n", ptr_to_ui64 (param_block));
+    printf ("C: calling HW with address of param block: 0x%0llx\n", ptr_to_ui64 (cp_param_block));
     record_start_time ();
-    bc_call_HW (ptr_to_ui64 (param_block));
+    bc_call_HW (ptr_to_ui64 (cp_param_block));
     record_finish_time ();
     printf ("C: returned from HW\n");
     fprint_delta_time (stdout);
