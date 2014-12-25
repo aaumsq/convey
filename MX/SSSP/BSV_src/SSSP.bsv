@@ -18,6 +18,7 @@ import BC_HW_IFC          :: *;
 import BC_Transactors     :: *;
 
 import SSSPEngine::*;
+import WorklistFIFO::*;
 
 `define NUM_ENGINES 4
 `define LG_NUM_ENGINES 2
@@ -63,11 +64,14 @@ module mkSSSP(BC_HW2_IFC);
     Reg#(Bit#(`NUM_ENGINES)) engineDoneIdx <- mkRegU; // need +1 for terminating condition
     Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ  <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
-   Vector #(16, FIFOF #(BC_MC_flush_req)) f_flush_reqs <- replicateM (mkFIFOF);
-   Vector #(16, FIFOF #(BC_MC_flush_rsp)) f_flush_rsps <- replicateM (mkFIFOF);
+    Vector #(16, FIFOF #(BC_MC_flush_req)) f_flush_reqs <- replicateM (mkFIFOF);
+    Vector #(16, FIFOF #(BC_MC_flush_rsp)) f_flush_rsps <- replicateM (mkFIFOF);
     
     Vector#(`NUM_ENGINES, SSSPEngineIfc) engines <- replicateM(mkSSSPEngine);
     Vector#(`NUM_ENGINES, Reg#(Bit#(64))) engineResults <- replicateM(mkRegU);
+    
+    
+    
     /*
     for(Integer mc = 0; mc < 16; mc = mc + 1) begin
         mkConnection();
