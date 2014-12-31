@@ -53,10 +53,10 @@ Integer param_sentinel = 6;
 module mkSSSP(BC_HW2_IFC);
     Reg#(BC_AEId) fpgaId <- mkRegU;
     Reg#(BC_Addr) paramPtr <- mkRegU;
-    Reg#(Bit#(64)) paramNodePtr <- mkRegU;
-    Reg#(Bit#(64)) paramEdgePtr <- mkRegU;
-    Reg#(Bit#(64)) paramJobsPtr <- mkRegU;
-    Reg#(Bit#(64)) paramNumNobs <- mkRegU;
+    Reg#(BC_Addr) paramNodePtr <- mkRegU;
+    Reg#(BC_Addr) paramEdgePtr <- mkRegU;
+    Reg#(BC_Addr) paramJobsPtr <- mkRegU;
+    Reg#(Bit#(64)) paramNumJobs <- mkRegU;
     Reg#(Bit#(64)) paramOutput  <- mkRegU;
     Reg#(Bit#(64)) paramStatus  <- mkRegU;
     Reg#(Bit#(64)) paramSentinel <- mkRegU;
@@ -70,6 +70,7 @@ module mkSSSP(BC_HW2_IFC);
     Vector#(`NUM_ENGINES, SSSPEngineIfc) engines <- replicateM(mkSSSPEngine);
     Vector#(`NUM_ENGINES, Reg#(Bit#(64))) engineResults <- replicateM(mkRegU);
     
+    Worklist work <- mkWorklistFIFO();
     
     
     /*

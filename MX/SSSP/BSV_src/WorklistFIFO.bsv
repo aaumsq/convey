@@ -19,24 +19,20 @@ import BC_Utils           :: *;
 import BC_HW_IFC          :: *;
 import BC_Transactors     :: *;
 
-import Counter::*;
+//import CoalescingCounter::*;
+import WLEngine::*;
 
-`define WL_ENGINE_PORTS 4
-`define WL_SPILL_PORTS 2
-`define WL_WLFIFO_SIZE 1024
-
-typedef Bit#(32) WLPriority;
-typedef Bit#(32) WLJob;
-typedef Tuple2#(WLPriority, WLJob) WLEntry;
-typedef Tuple2#(Bool, WLEntry) WLSpillReq; // True = Read, False = Write
-typedef Tuple2#(Bool, WLEntry) WLSpillResp; // True = Read, False = Write
+`include "GaloisTypes.bsv"
 
 interface Worklist;
     interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) enq;
     interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) deq;
     
-    interface Vector#(`WL_ENGINE_PORTS, Get#(WLSpillReq)) spillToMem;
-    interface Vector#(`WL_ENGINE_PORTS, Put#(WLSpillResp)) memToSpill;
+    interface Vector#(`WL_ENGINE_PORTS, Get#(BC_MC_REQ)) spillToMem;
+    interface Vector#(`WL_ENGINE_PORTS, Put#(BC_MC_RSP)) memToSpill;
+    
+    method Action init(BC_Addr spillPtr, BC_Addr allocSize, BC_Addr totalSize);
+    
 endinterface
 
 
@@ -46,8 +42,8 @@ module mkWorklistFIFO(Worklist);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) enqQ <- replicateM(mkFIFOF);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) deqQ <- replicateM(mkFIFOF);
     
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLSpillReq)) spillToMemQ <- replicateM(mkFIFOF);
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLSpillResp)) memToSpillQ <- replicateM(mkFIFOF);
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(BC_MC_REQ)) spillToMemQ <- replicateM(mkFIFOF);
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(BC_MC_RSP)) memToSpillQ <- replicateM(mkFIFOF);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineQ <- replicateM(mkSizedBRAMFIFOF(1024));
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineStagingQ <- replicateM(mkSizedFIFOF(2));
@@ -55,6 +51,11 @@ module mkWorklistFIFO(Worklist);
     // MAX engineSpillQ size is 255
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineSpillQ <- replicateM(mkSizedFIFOF(16));
     Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(8)))  engineSpillCredits <- replicateM(mkReg(16));
+    
+    Reg#(BC_Addr) spillOffset <- mkRegU;
+    Reg#(BC_Addr) headPtr <- mkRegU;
+    Reg#(BC_Addr) tailPtr <- mkRegU;
+    Reg#(BC_Addr) totalSize <- mkRegU;
     
     //FIFOF#(WLEntry) workQ <- mkSizedFIFOF(`WL_WLFIFO_SIZE);
     
@@ -102,7 +103,7 @@ module mkWorklistFIFO(Worklist);
             deqQ[i].enq(entry);
         endrule
         
-        
+        /*
         rule processSpill;
             
             if(!engineQ[i].notEmpty) begin
@@ -110,7 +111,9 @@ module mkWorklistFIFO(Worklist);
                 if(engineSpillCredits[i] > 0) begin
                     $display("Asking for data");
                     engineSpillCredits[i] <= engineSpillCredits[i] - 1;
-                    spillToMemQ[i].enq(tuple2(True, ?));
+                    
+                    let req = BC_MC_REQ {cmd_sub: REQ_RD, rtnctl: 0, len: BC_8B, vadr: headPtr, data: ?};
+                    //spillToMemQ[i].enq(req);
                 end
             end
             else if(!engineQ[i].notFull) begin
@@ -119,7 +122,7 @@ module mkWorklistFIFO(Worklist);
                 WLEntry entry = engineQ[i].first();
                 engineQ[i].deq();
                 
-                spillToMemQ[i].enq(tuple2(False, entry));
+                //spillToMemQ[i].enq(tuple2(False, entry));
             end
         endrule
         
@@ -134,9 +137,9 @@ module mkWorklistFIFO(Worklist);
             else begin
                 // If write response, just ignore
             end
-        endrule
+        endrule */
     end
-    
+        
     
     interface enq = map(toPut, enqQ);
     interface deq = map(toGet, deqQ);
