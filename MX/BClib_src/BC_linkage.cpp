@@ -405,6 +405,7 @@ uint64_t bc_c_mem_atomic (uint64_t cmd_sub, uint64_t len, uint64_t addr, uint64_
 	uint32_t  n32u;                  // New memory contents
 
 	x32u = x64u;
+    uint32_t x32u_upper = x64u >> 32;
 	x32i = x32u;
 
 	// Read memory
@@ -425,8 +426,16 @@ uint64_t bc_c_mem_atomic (uint64_t cmd_sub, uint64_t len, uint64_t addr, uint64_
 	  case ATOM_AND:  { n32u = (m32u & x32u);                 break; }
 	  case ATOM_OR:   { n32u = (m32u | x32u);                 break; }
 	  case ATOM_XOR:  { n32u = (m32u ^ x32u);                 break; }
-	  case ATOM_CAS:  { n32u = m32u;                          break; } // TODO: fix this
-	  default: {
+	  case ATOM_CAS:  {
+          if(m32u == x32u_upper) {
+              n32u = x32u;
+          }
+          else {
+              n32u = m32u;
+          }
+          break; 
+      } // TODO: fix this
+    default: {
 	      fprintf (stderr,
 		       "ERROR: c_mem_amo: unknown atomic mem operation 0x%0llx; ignoring\n",
 		       cmd_sub);
