@@ -26,8 +26,8 @@ interface WLEngine;
     interface Vector#(`WL_ENGINE_PORTS, Reg#(Bool)) emptyReq;
     interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) streamOut;
 
-    interface Vector#(16, BC_MC_REQ) memReq;
-    interface Vector#(16, BC_MC_RSP) memResp;
+    interface Vector#(16, Get#(BC_MC_REQ)) memReq;
+    interface Vector#(16, Put#(BC_MC_RSP)) memResp;
 
     method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
 endinterface
@@ -45,7 +45,7 @@ module mkWLEngine(WLEngine);
     // memOffset[3]: workList size
     // memOffset[4]: start of data
     
-    Reg#(BC_AEId) fpgaId <- mkRegU;
+    Reg#(BC_AEId) fpgaId <- mkReg(0);
     Reg#(BC_Addr) lockLoc <- mkRegU;
     Reg#(BC_Addr) headPtr <- mkRegU;
     Reg#(BC_Addr) headPtrLoc <- mkRegU;
@@ -55,6 +55,8 @@ module mkWLEngine(WLEngine);
     
     Reg#(BC_Addr) maxSize <- mkRegU;
     Reg#(BC_Addr) bufferLoc <- mkRegU;
+    
+    Reg#(Bool) ready <- mkReg(False);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) reqQ <- replicateM(mkFIFOF);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) respQ <- replicateM(mkFIFOF);
@@ -72,11 +74,13 @@ module mkWLEngine(WLEngine);
     Reg#(BC_Addr) curReadEntry <- mkRegU;
     let readFSM <- mkFSM(
        seq
+           readFSM_lockData <= 32'b1;
+           $display("%0d: mkWLEngine[%0d]: Starting readFSM...", cur_cycle, fpgaId);
            // Obtain global worklist lock
-           while(readFSM_lockData == 32'd1) action
+           while(readFSM_lockData == 32'd1) seq
                action
-                   $display("%0d: mkWLEngine[%0d]: Reading lock bit...", cur_cycle, fpgaId);
-                   memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_ATOM_CAS, rtnctl: 1024, len: BC_4B, vadr: lockLoc, data: 64'h0000_0001});
+                   $display("%0d: mkWLEngine[%0d]: Reading lock bit at addr: %0x...", cur_cycle, fpgaId, lockLoc);
+                   memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_ATOM_CAS, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0001});
                endaction
            
                action
@@ -89,13 +93,14 @@ module mkWLEngine(WLEngine);
                        $display("  Someone currently using it, retry...");
                    end
                endaction
-           endaction
+          endseq
            
            // Get updated head and tail pointers
            action
                $display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
-               memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: 1024, len: BC_8B, vadr: headPtrLoc, data: ?});
-               memReqQ[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: 1024, len: BC_8B, vadr: tailPtrLoc, data: ?});
+               Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
+               memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: headPtrLoc, data: ?});
+               memReqQ[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: tailPtrLoc, data: ?});
            endaction
            
            action
@@ -110,12 +115,9 @@ module mkWLEngine(WLEngine);
            
            action
                // Get number of entries in FIFO
-               BC_Addr size;
+               BC_Addr size = 0;
                if(headPtr < tailPtr) begin
                    size = tailPtr - headPtr;
-               end
-               else if(headPtr == tailPtr) begin
-                   size = 0;
                end
                else if(headPtr > tailPtr) begin
                    size = (maxSize - tailPtr) + headPtr;
@@ -132,11 +134,15 @@ module mkWLEngine(WLEngine);
                curReadEntry <= 0;
            endaction
            
-           while(curReadEntry < numReadEntries) action
+           while(curReadEntry < numReadEntries) seq
                action
                    $display("Reading entry %0d of %0d...", curReadEntry, numReadEntries);
                    BC_Addr addr = bufferLoc + (headPtr << `LG_WLENTRY_SIZE);
-                   memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: 1024, len: BC_8B, vadr: addr, data: ?});
+                   Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
+
+                   memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: addr, data: ?});
+
+                   curReadEntry <= curReadEntry + 1;
                    
                    if(headPtr == (maxSize-1)) begin
                        headPtr <= 0;
@@ -159,7 +165,7 @@ module mkWLEngine(WLEngine);
                    
                    $display("  Data ", fshow(rsp));
                endaction
-           endaction
+           endseq
        endseq
        );
     
@@ -191,16 +197,22 @@ module mkWLEngine(WLEngine);
     end
     
     method Action init(BC_AEId fpgaid, BC_Addr lockloc, BC_Addr headptrloc, BC_Addr tailptrloc, BC_Addr maxsize, BC_Addr bufferloc);
-        fpgaId <= fpgaId;
+        $display("%0d: mkWLEngine[%0d]: INIT, fpgaid: %0x, lockLoc:%0x, headPtrLoc: %0x, tailPtrLoc: %0x, maxSize: %0d, bufferLoc: %0x", cur_cycle, fpgaid, fpgaid, lockloc, headptrloc, tailptrloc, maxsize, bufferloc);
+        fpgaId <= fpgaid;
         lockLoc <= lockloc;
         headPtrLoc <= headptrloc;
         tailPtrLoc <= tailptrloc;
         maxSize <= maxsize;
         bufferLoc <= bufferloc;
+        ready <= True;
+
+        readFSM.start();
     endmethod
     
     interface streamIn = map(toPut, reqQ);
     interface streamOut = map(toGet, respQ);
+    interface memReq = map(toGet, memReqQ);
+    interface memResp = map(toPut, memRespQ);
 endmodule
 
 

@@ -20,6 +20,8 @@
 #include <fstream>
 #include <cstdlib>
 
+#include <assert.h>
+
 #include "BC_linkage.h"
 #include "timing.h"
 #include "instrumentation.h"
@@ -39,11 +41,18 @@ typedef enum {
               PARAM_NODEPTR,
               PARAM_EDGEPTR,
               PARAM_JOBSPTR,
-              PARAM_NUMJOBS,
+              PARAM_META,
               PARAM_OUTPUT,
               PARAM_STATUS,
               PARAM_SENTINEL
 } ParamIndexes;
+
+typedef enum {
+    LOCK,
+    HEADPTR,
+    TAILPTR,
+    WLSIZE
+} JobMetaIndexes;
 
 static  uint64_t *param_block, *cp_param_block;
 static  int  param_block_size;
@@ -72,35 +81,38 @@ struct Output {
 };
 
 // ASSUMES SRC EDGES ARE IN ORDER
-void readGraph(const char* file, Node *nodes, uint32_t &numNodes, Edge* edges, uint32_t &numEdges) {
+void readGraph(const char* file, Node **nodes, uint32_t &numNodes, Edge **edges, uint32_t &numEdges) {
     
     std::ifstream in(file);
     
     in >> numNodes >> numEdges;
-    //in >> numNodes >> ws >> numEdges >> ws;
     std::cout << "numNodes: " << numNodes << ", numEdges: " << numEdges << "\n";
-    nodes = (Node*)calloc(numNodes, sizeof(Node));
-    edges = (Edge*)calloc(numEdges, sizeof(Edge));
+    posix_memalign((void**)nodes, 512, numNodes*sizeof(Node));
+    posix_memalign((void**)edges, 512, numEdges*sizeof(Edge));
+    printf("Sizeof node: %d, sizeof edge: %d\n", sizeof(Node), sizeof(Edge));
+    std::cout << "nodes: " << numNodes*sizeof(Node) << "B, edges: " << numEdges*sizeof(Edge) << "B\n";
     
     uint32_t src, dest, weight;
     uint32_t lastNode = -1;
     uint32_t edgeIdx = 0;
     while(in.good()) {
         in >> src >> dest >> weight;
-        //in >> src >> ws >> dest >> ws >> weight >> ws;
         std::cout << "---" << src << " " << dest << " " << weight << "\n";
         
         // If new node
         if(src != lastNode) {
-            nodes[src].id = src;
-            nodes[src].payload = 0;
-            nodes[src].edgePtr = edgeIdx;
-            nodes[src].numEdges = 0;
+            assert(src < numNodes);
+            (*nodes)[src].id = src;
+            (*nodes)[src].payload = 0;
+            (*nodes)[src].edgePtr = edgeIdx;
+            (*nodes)[src].numEdges = 0;
         }
         
         // Append new edge
-        edges[edgeIdx].dest = dest;
-        edges[edgeIdx].weight = weight;
+        assert(edgeIdx < numEdges);
+        (*edges)[edgeIdx].dest = dest;
+        (*edges)[edgeIdx].weight = weight;
+        (*nodes)[src].numEdges += 1;
         
         lastNode = src;
         edgeIdx++;
@@ -126,17 +138,29 @@ int App_SW (const char *file)
     Edge *edges, *cp_edges;
     uint32_t numNodes = 0, numEdges = 0;
 
-    readGraph(file, nodes, numNodes, edges, numEdges);
-    
+    readGraph(file, &nodes, numNodes, &edges, numEdges);
+    printf("Done reading graph\n");
+    printf("numNodes: %d, numEdges: %d\n", numNodes, numEdges);
+    for(int i = 0; i < numNodes; i++)
+        printf("  nodes[%d] = {%d, %d, %d, %d}\n", i, nodes[i].id, nodes[i].payload, nodes[i].edgePtr, nodes[i].numEdges);
+        
     // Generate and create Worklist data structure
     
     Job *jobs, *cp_jobs;
     uint32_t numJobs = 1;
+    uint64_t maxJobs = (uint64_t)4*1024*1024*1024; // 4 Giga-entries
+    posix_memalign((void**)&jobs, 512, numJobs*sizeof(Job));
+    jobs[0].priority = 7;
+    jobs[0].graphId = 1;
     
-    jobs = (Job*)calloc(1, sizeof(Job));
+    uint64_t *meta, *cp_meta;
+    uint32_t numMeta = 4;
+    posix_memalign((void**)&meta, 512, numMeta*sizeof(uint64_t));
     
-    jobs[0].priority = 0;
-    jobs[0].graphId = 0;
+    meta[LOCK] = 0;
+    meta[HEADPTR] = 0;
+    meta[TAILPTR] = numJobs;
+    meta[WLSIZE] = maxJobs;
     
     // Generate and create output
     Output *output, *cp_output;
@@ -145,27 +169,24 @@ int App_SW (const char *file)
     
     // ----------------------------------------------------------------
     // Allocate the input and output vectors on HW-side memory
-
-    // Malloc on the host
-    posix_memalign ((void**)&nodes, 512, numNodes*sizeof(Node));
-    posix_memalign ((void**)&edges, 512, numEdges*sizeof(Edge));
-    posix_memalign ((void**)&cp_jobs, 512, sizeof(Job));
-    
+    printf("Allocating CNY memory\n");
     // Malloc on the coproc   
-    cny_cp_posix_memalign ((void**)&cp_nodes, 512, numNodes*sizeof(Node));
-    cny_cp_posix_memalign ((void**)&cp_edges, 512, numEdges*sizeof(Edge));
-    cny_cp_posix_memalign ((void**)&cp_jobs, 512, numJobs*sizeof(Job));
-    cny_cp_posix_memalign ((void**)&cp_output, 512, sizeof(Output));
+    cny_cp_posix_memalign((void**)&cp_nodes, 512, numNodes*sizeof(Node));
+    cny_cp_posix_memalign((void**)&cp_edges, 512, numEdges*sizeof(Edge));
+    cny_cp_posix_memalign((void**)&cp_jobs, 512, maxJobs*sizeof(Job));
+    cny_cp_posix_memalign((void**)&cp_meta, 512, numMeta*sizeof(uint64_t));
+    cny_cp_posix_memalign((void**)&cp_output, 512, 1*sizeof(Output));
     
     // copy the input arrays to coprocessor using datamover
     cny_cp_memcpy (cp_nodes, nodes, numNodes*sizeof(Node));
     cny_cp_memcpy (cp_edges, edges, numEdges*sizeof(Edge));
     cny_cp_memcpy (cp_jobs, jobs, numJobs*sizeof(Job));
-    cny_cp_memcpy (cp_output, output, sizeof(Output));
+    cny_cp_memcpy (cp_meta, meta, numMeta*sizeof(uint64_t));
+    cny_cp_memcpy (cp_output, output, 1*sizeof(Output));
     
     // ----------------------------------------------------------------
     // Create the param block, and initialize it
-
+    printf("Creating param block\n");
     param_block_size = (PARAM_SENTINEL+1) * NUM_64b_WORDS_PER_BANK * sizeof (uint64_t);
     posix_memalign ((void**) & param_block, 512, param_block_size);
     cny_cp_posix_memalign ((void**) & cp_param_block, 512, param_block_size);
@@ -177,17 +198,17 @@ int App_SW (const char *file)
         param_block [PARAM_NODEPTR  * 8 + fpga] = ptr_to_ui64(cp_nodes);
         param_block [PARAM_EDGEPTR  * 8 + fpga] = ptr_to_ui64(cp_edges); 
         param_block [PARAM_JOBSPTR  * 8 + fpga] = ptr_to_ui64(cp_jobs);
-        param_block [PARAM_NUMJOBS  * 8 + fpga] = numJobs;
+        param_block [PARAM_META     * 8 + fpga] = ptr_to_ui64(cp_meta);
         param_block [PARAM_OUTPUT   * 8 + fpga] = ptr_to_ui64(cp_output);
-        param_block [PARAM_SENTINEL * 8 + fpga] = 0xCAFEF00D;
+        param_block [PARAM_SENTINEL * 8 + fpga] = 0xCAFEF000+fpga;
         printf("%0d\n", PARAM_SENTINEL * 8 + fpga);
         printf ("C: params [fpga %0d] are %0llx 0x%llx 0x%llx %lld 0x%llx 0x%llx\n", fpga,
                 param_block [PARAM_NODEPTR  * 8 + fpga],
-                param_block [PARAM_EDGEPTR   * 8 + fpga],
-                param_block [PARAM_JOBSPTR   * 8 + fpga],
-                param_block [PARAM_NUMJOBS   * 8 + fpga],
-                param_block [PARAM_OUTPUT    * 8 + fpga],
-                param_block [PARAM_SENTINEL  * 8 + fpga]);
+                param_block [PARAM_EDGEPTR  * 8 + fpga],
+                param_block [PARAM_JOBSPTR  * 8 + fpga],
+                param_block [PARAM_META     * 8 + fpga],
+                param_block [PARAM_OUTPUT   * 8 + fpga],
+                param_block [PARAM_SENTINEL * 8 + fpga]);
     }
 
     // Copy the param block to coprocessor memory

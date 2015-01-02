@@ -28,10 +28,10 @@ interface Worklist;
     interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) enq;
     interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) deq;
     
-    interface Vector#(`WL_ENGINE_PORTS, Get#(BC_MC_REQ)) spillToMem;
-    interface Vector#(`WL_ENGINE_PORTS, Put#(BC_MC_RSP)) memToSpill;
+    interface Vector#(`WL_ENGINE_PORTS, Get#(BC_MC_REQ)) memReq;
+    interface Vector#(`WL_ENGINE_PORTS, Put#(BC_MC_RSP)) memResp;
     
-    method Action init(BC_Addr spillPtr, BC_Addr allocSize, BC_Addr totalSize);
+    method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
     
 endinterface
 
@@ -56,6 +56,8 @@ module mkWorklistFIFO(Worklist);
     Reg#(BC_Addr) headPtr <- mkRegU;
     Reg#(BC_Addr) tailPtr <- mkRegU;
     Reg#(BC_Addr) totalSize <- mkRegU;
+    
+    WLEngine engine <- mkWLEngine();
     
     //FIFOF#(WLEntry) workQ <- mkSizedFIFOF(`WL_WLFIFO_SIZE);
     
@@ -140,11 +142,15 @@ module mkWorklistFIFO(Worklist);
         endrule */
     end
         
+    method Action init(BC_AEId fpgaid, BC_Addr lockloc, BC_Addr headptrloc, BC_Addr tailptrloc, BC_Addr maxsize, BC_Addr bufferloc);
+        $display("%0d: mkWorklistFIFO[%0d]: INIT", cur_cycle, fpgaid);
+        engine.init(fpgaid, lockloc, headptrloc, tailptrloc, maxsize, bufferloc);
+    endmethod
     
     interface enq = map(toPut, enqQ);
     interface deq = map(toGet, deqQ);
-    interface spillToMem = map(toGet, spillToMemQ);
-    interface memToSpill = map(toPut, memToSpillQ);
+    interface memReq = map(toGet, engine.memReq);
+    interface memResp = map(toPut, engine.memResp);
 endmodule
 
 endpackage
