@@ -66,7 +66,8 @@ module mkWLEngine(WLEngine);
     Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
     
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn0 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn1 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
     Vector#(`WL_ENGINE_PORTS, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
     Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(1))) curBufOut <- replicateM(mkReg(0));
     Vector#(32, PulseWire) fullBufOut <- replicateM(mkPulseWire);
@@ -74,15 +75,26 @@ module mkWLEngine(WLEngine);
 
     
     RWire#(Bit#(`WL_LG_ENGINE_PORTS)) bufInWriteIdxW <- mkRWire();
+    RWire#(Bit#(1)) bufInWriteBufW <- mkRWire();
     
     rule setWires;
-        function Bool bufInEmptyF(Integer x) = !bufIn[x].notEmpty;
-        Vector#(`WL_ENGINE_PORTS, Bool) bufInEmpties = genWith(bufInEmptyF);
-        let elem = findElem(True, bufInEmpties);
-        if(isValid(elem)) begin
-            Bit#(`WL_LG_ENGINE_PORTS) idx = pack(fromMaybe(?, elem));
+        function Bool bufInEmptyF0(Integer x) = !bufIn0[x].notEmpty;
+        function Bool bufInEmptyF1(Integer x) = !bufIn1[x].notEmpty;
+        Vector#(`WL_ENGINE_PORTS, Bool) bufInEmpties0 = genWith(bufInEmptyF0);
+        Vector#(`WL_ENGINE_PORTS, Bool) bufInEmpties1 = genWith(bufInEmptyF1);
+        let elem0 = findElem(True, bufInEmpties0);
+        let elem1 = findElem(True, bufInEmpties1);
+        if(isValid(elem0)) begin
+            Bit#(`WL_LG_ENGINE_PORTS) idx = pack(fromMaybe(?, elem0));
             //$display("Empty idx: %0d", idx);
             bufInWriteIdxW.wset(idx);
+            bufInWriteBufW.wset(0);
+        end
+        else if(isValid(elem1)) begin
+            Bit#(`WL_LG_ENGINE_PORTS) idx = pack(fromMaybe(?, elem1));
+            //$display("Empty idx: %0d", idx);
+            bufInWriteIdxW.wset(idx);
+            bufInWriteBufW.wset(1);
         end
     endrule
 
@@ -91,13 +103,15 @@ module mkWLEngine(WLEngine);
     Reg#(BC_Addr) readFSM_curEntry <- mkRegU;
     Reg#(Bit#(32)) readFSM_backOff <- mkRegU;
     Reg#(Bit#(`WL_LG_ENGINE_PORTS)) readFSM_bufIdx <- mkRegU;
+    Reg#(Bit#(1)) readFSM_buf <- mkRegU;
     
     let readFSM <- mkFSM(
        seq
            action
                readFSM_lockData <= 32'b1;
                readFSM_bufIdx <= fromMaybe(?, bufInWriteIdxW.wget());
-               $display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d...", cur_cycle, fpgaId, fromMaybe(?, bufInWriteIdxW.wget()));
+               readFSM_buf <= fromMaybe(?, bufInWriteBufW.wget());
+               $display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d idx %0d...", cur_cycle, fpgaId, fromMaybe(?, bufInWriteBufW.wget()), fromMaybe(?, bufInWriteIdxW.wget()));
            endaction
            
            // Obtain global worklist lock
@@ -186,7 +200,10 @@ module mkWLEngine(WLEngine);
                        
                        WLEntry entry = unpack(rsp.data);
                        $display("%0d: mkWLEngine[%0d]: entry priority: %0d, graphId: %0d", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
-                       bufIn[readFSM_bufIdx].enq(entry);
+                       if(readFSM_bufIdx == 0)
+                         bufIn0[readFSM_bufIdx].enq(entry);
+                       else
+                         bufIn1[readFSM_bufIdx].enq(entry);
                    endaction
                endseq
                
