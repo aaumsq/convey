@@ -1,7 +1,11 @@
 Copyright (c) 2012-2015 Bluespec, Inc., All Rights Reserved
+Copyright (c) 2014-2015 The University of Texas at Austin
 
 This is BClib, the "Bluespec Convey library",
 for developing SW + HW (C + BSV) apps on Convey platforms.
+
+This includes a high-performance Single Source Shortest Path (SSSP) 
+research implementation currently under development.
 
 The following is a user-manual, including tutorials and library documentation:
     Doc/BClib_manual.pdf
