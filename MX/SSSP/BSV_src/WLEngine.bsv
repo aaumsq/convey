@@ -68,6 +68,8 @@ module mkWLEngine(WLEngine);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn0 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn1 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
+    Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(1))) curBufIn <- replicateM(mkReg(0));
+
     Vector#(`WL_ENGINE_PORTS, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
     Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(1))) curBufOut <- replicateM(mkReg(0));
     Vector#(32, PulseWire) fullBufOut <- replicateM(mkPulseWire);
@@ -77,6 +79,7 @@ module mkWLEngine(WLEngine);
     RWire#(Bit#(`WL_LG_ENGINE_PORTS)) bufInWriteIdxW <- mkRWire();
     RWire#(Bit#(1)) bufInWriteBufW <- mkRWire();
     
+    (* no_implicit_conditions *)
     rule setWires;
         function Bool bufInEmptyF0(Integer x) = !bufIn0[x].notEmpty;
         function Bool bufInEmptyF1(Integer x) = !bufIn1[x].notEmpty;
@@ -246,6 +249,25 @@ module mkWLEngine(WLEngine);
        );
     
     for(Integer i = 0; i < `WL_ENGINE_PORTS; i = i + 1) begin
+        
+        rule setCurBufIn;
+            if(((curBufIn[i] == 0) && !bufIn0[i].notEmpty && bufIn1[i].notEmpty) ||
+               ((curBufIn[i] == 1) && !bufIn1[i].notEmpty && bufIn0[i].notEmpty)) begin
+               // Flip bit
+               curBufIn[i] <= 1 + curBufIn[i];
+            end
+            
+            if((curBufIn[i] == 0) && bufIn0[i].notEmpty) begin
+                WLEntry pkt = bufIn0[i].first();
+                bufIn0[i].deq();
+                respQ[i].enq(pkt);
+            end
+            if((curBufIn[i] == 1) && bufIn1[i].notEmpty) begin
+                WLEntry pkt = bufIn1[i].first();
+                bufIn1[i].deq();
+                respQ[i].enq(pkt);
+            end
+        endrule
         
         rule streamToBuf;
             WLEntry entry = reqQ[i].first();
