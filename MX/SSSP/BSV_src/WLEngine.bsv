@@ -18,8 +18,8 @@ import BC_Utils           :: *;
 import BC_HW_IFC          :: *;
 import BC_Transactors     :: *;
 
-
-`include "GaloisTypes.bsv"
+import GaloisTypes::*;
+`include "GaloisDefs.bsv"
 
 interface WLEngine;
     interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) streamIn;

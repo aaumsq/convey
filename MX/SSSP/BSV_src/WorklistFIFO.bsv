@@ -21,8 +21,8 @@ import BC_Transactors     :: *;
 
 //import CoalescingCounter::*;
 import WLEngine::*;
-
-`include "GaloisTypes.bsv"
+import GaloisTypes::*;
+`include "GaloisDefs.bsv"
 
 interface Worklist;
     interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) enq;

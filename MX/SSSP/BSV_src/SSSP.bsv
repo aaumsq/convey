@@ -20,6 +20,8 @@ import BC_Transactors     :: *;
 
 import SSSPEngine::*;
 import WorklistFIFO::*;
+import GaloisTypes::*;
+`include "GaloisDefs.bsv"
 
 `define NUM_ENGINES 16
 `define LG_NUM_ENGINES 4
@@ -72,7 +74,7 @@ module mkSSSP(BC_HW2_IFC);
     Vector #(16, FIFOF #(BC_MC_flush_req)) f_flush_reqs <- replicateM (mkFIFOF);
     Vector #(16, FIFOF #(BC_MC_flush_rsp)) f_flush_rsps <- replicateM (mkFIFOF);
     
-    Vector#(`NUM_ENGINES, SSSPEngineIfc) engines <- replicateM(mkSSSPEngine);
+    Vector#(`NUM_ENGINES, Engine) engines <- replicateM(mkSSSPEngine);
     Vector#(`NUM_ENGINES, FIFOF#(BC_MC_REQ)) engineOutQs <- replicateM(mkBypassFIFOF);
     Vector#(`NUM_ENGINES, FIFOF#(BC_MC_RSP)) engineInQs  <- replicateM(mkBypassFIFOF);
     Vector#(`NUM_ENGINES, Reg#(Bit#(64))) engineResults <- replicateM(mkRegU);
@@ -232,7 +234,7 @@ module mkSSSP(BC_HW2_IFC);
            action
                // Start the N engines
 	           for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) action
-	               engines[i].start();
+	               engines[i].init(fpgaId);
                    //engines[i].start(fpgaId, fromInteger(i), nodePtr, edgePtr, jobsPtr, numJobs, outputPtr, status);
 	           endaction
            endaction
