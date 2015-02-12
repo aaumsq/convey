@@ -58,21 +58,43 @@ static  uint64_t *param_block, *cp_param_block;
 static  int  param_block_size;
 
 // Later on maybe id and payload should go to 48-bit
+/* FPGA
 struct Node {
     uint32_t id;
     uint32_t payload;
     uint32_t edgePtr;
     uint32_t numEdges;
+};*/
+
+struct Node {
+    uint32_t edgePtr;
+    uint32_t numEdges;
+    uint32_t payload;
+    uint32_t id;
 };
 
+/* FPGA
 struct Edge {
     uint32_t dest;
     uint32_t weight;
 };
+*/
 
+struct Edge {
+    uint32_t weight;
+    uint32_t dest;
+};
+
+/* FPGA
 struct Job {
     uint32_t priority;
     uint32_t graphId;
+};
+*/
+
+struct Job {
+    uint32_t graphId;
+    uint32_t priority;
 };
 
 struct Output {
@@ -103,7 +125,7 @@ void readGraph(const char* file, Node **nodes, uint32_t &numNodes, Edge **edges,
         if(src != lastNode) {
             assert(src < numNodes);
             (*nodes)[src].id = src;
-            (*nodes)[src].payload = 0;
+            (*nodes)[src].payload = -1;
             (*nodes)[src].edgePtr = edgeIdx;
             (*nodes)[src].numEdges = 0;
         }
@@ -143,6 +165,9 @@ int App_SW (const char *file)
     printf("numNodes: %d, numEdges: %d\n", numNodes, numEdges);
     for(int i = 0; i < numNodes; i++)
         printf("  nodes[%d] = {%d, %d, %d, %d}\n", i, nodes[i].id, nodes[i].payload, nodes[i].edgePtr, nodes[i].numEdges);
+    
+    for(int i = 0; i < numEdges; i++)
+        printf("  edges[%d] = {%d, %d}]\n", i, edges[i].dest, edges[i].weight);
         
     // Generate and create Worklist data structure
     
@@ -150,8 +175,12 @@ int App_SW (const char *file)
     uint32_t numJobs = 1;
     uint64_t maxJobs = (uint64_t)4*1024*1024*1024; // 4 Giga-entries
     posix_memalign((void**)&jobs, 512, numJobs*sizeof(Job));
-    jobs[0].priority = 7;
-    jobs[0].graphId = 1;
+    
+    #define INIT_IDX 0
+    
+    jobs[0].priority = 1;
+    jobs[0].graphId = INIT_IDX;
+    nodes[INIT_IDX].payload = 0;
     
     uint64_t *meta, *cp_meta;
     uint32_t numMeta = 4;
@@ -170,6 +199,8 @@ int App_SW (const char *file)
     // ----------------------------------------------------------------
     // Allocate the input and output vectors on HW-side memory
     printf("Allocating CNY memory\n");
+    for(int i = 0; i < numNodes*sizeof(Node)/4; i++)
+        printf("%d\n", ((int*)nodes)[i]);
     // Malloc on the coproc   
     cny_cp_posix_memalign((void**)&cp_nodes, 512, numNodes*sizeof(Node));
     cny_cp_posix_memalign((void**)&cp_edges, 512, numEdges*sizeof(Edge));

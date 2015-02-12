@@ -343,7 +343,7 @@ uint64_t bc_c_mem_read (uint64_t len, uint64_t addr)
 void bc_c_mem_write (uint64_t len, uint64_t addr, uint64_t x)
 {
 #ifdef DEBUG
-    printf ("c_mem_write (len 0x%0llx, addr 0x%0llx, data0x%016llx)\n", addr, x);
+    printf ("c_mem_write (len 0x%0llx, addr 0x%0llx, data0x%016llx)\n", len, addr, x);
 #endif
     switch (len) {
       case 0: {

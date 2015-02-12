@@ -20,6 +20,7 @@ import BC_Transactors     :: *;
 
 import SSSPEngine::*;
 import WorklistFIFO::*;
+import GraphEngine::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
@@ -83,23 +84,42 @@ module mkSSSP(BC_HW2_IFC);
     Vector#(16, FIFOF#(BC_MC_REQ)) worklistOutQs <- replicateM(mkBypassFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) worklistInQs  <- replicateM(mkBypassFIFOF);
     
+    GraphEngine graph <- mkGraphEngine();
+    Vector#(16, FIFOF#(BC_MC_REQ)) graphOutQs <- replicateM(mkBypassFIFOF);
+    Vector#(16, FIFOF#(BC_MC_RSP)) graphInQs  <- replicateM(mkBypassFIFOF);
+    
     for(Integer i = 0; i < 16; i = i + 1) begin
 
+        mkConnection(engines[i].workOut, worklist.enq[i]);
+        mkConnection(worklist.deq[i], engines[i].workIn);
+        
         mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
         mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
         
-        rule toMem(engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty);
-            if(engineOutQs[i].notEmpty) begin
+        mkConnection(engines[i].graphReq, graph.req[i]);
+        mkConnection(graph.resp[i], engines[i].graphResp);
+        
+        mkConnection(graph.memReq[i], toPut(graphOutQs[i]));
+        mkConnection(toGet(graphInQs[i]), graph.memResp[i]);
+        
+        rule toMem(engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty);
+            if(graphOutQs[i].notEmpty) begin
+                BC_MC_REQ req = graphOutQs[i].first();
+                graphOutQs[i].deq();
+                memReqQ[i].enq(req);
+                //$display("toMem Graph routing to mem %0d ", i, fshow(req));
+            end
+            else if(engineOutQs[i].notEmpty) begin
                 BC_MC_REQ req = engineOutQs[i].first();
                 engineOutQs[i].deq();
                 memReqQ[i].enq(req);
-                $display("toMem Engine routing to mem %0d", i);
+                //$display("toMem Engine routing to mem %0d ", i, fshow(req));
             end
             else if(worklistOutQs[i].notEmpty) begin
                 BC_MC_REQ req = worklistOutQs[i].first();
                 worklistOutQs[i].deq();
                 memReqQ[i].enq(req);
-                $display("toMem WorkList routing to mem %0d", i);
+                //$display("toMem WorkList routing to mem %0d ", i, fshow(req));
             end
         endrule
         
@@ -110,12 +130,15 @@ module mkSSSP(BC_HW2_IFC);
             
             GaloisAddress gaddr = unpack(resp.rtnctl);
             if(gaddr.mod == MK_ENGINE) begin
-                $display("fromMem packet routing to Engine %0d", i);
+                //$display("fromMem packet routing to Engine %0d", i);
                 engineInQs[i].enq(resp);
             end
             else if(gaddr.mod == MK_WORKLIST) begin
-                $display("fromMem packet routing to Worklist %0d", i);
+                //$display("fromMem packet routing to Worklist %0d", i);
                 worklistInQs[i].enq(resp);
+            end
+            else if(gaddr.mod == MK_GRAPH) begin
+                graphInQs[i].enq(resp);
             end
             else begin
                 $display("ERROR: fromMem packet dest unknown: ", fshow(resp));
@@ -229,7 +252,11 @@ module mkSSSP(BC_HW2_IFC);
                BC_Addr tailPtrLoc = paramMetaPtr + fromInteger(param_tailPtr) * 8;
                
                worklist.init(fpgaId, lockLoc, headPtrLoc, tailPtrLoc, wlSize, paramJobsPtr);
-       endaction
+           endaction
+           
+           action
+               graph.init(fpgaId, paramNodePtr, paramEdgePtr);
+           endaction
            
            action
                // Start the N engines

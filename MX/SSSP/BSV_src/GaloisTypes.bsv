@@ -19,7 +19,7 @@ typedef struct {
    NodeID dest;
    EdgeWeight weight;
 } GraphEdge deriving (Bits, Eq);
- 
+
 typedef union tagged {
    struct {
       NodeID id;
@@ -27,22 +27,35 @@ typedef union tagged {
    } ReadNode;
    
    struct {
-      EdgePtr edgePtr;
+      EdgePtr edgeID;
       Channel channel;
    } ReadEdge;
    
    struct {
       NodeID id;
-      Bit#(32) compareVal;
-      Bit#(32) swapVal;
+      NodePayload cmpVal;
+      NodePayload swapVal;
       Channel channel;
    } CAS;
    
 } GraphReq deriving(Bits, Eq);
 
-typedef struct {
-   GraphNode node;
-   Channel channel;
+typedef union tagged {
+   struct {
+      GraphNode node;
+      Channel channel;
+   } Node;
+   
+   struct {
+      GraphEdge gedge;
+      Channel channel;
+   } Edge;
+
+   struct {
+      Bool success;
+      NodePayload oldVal;
+      Channel channel;
+   } CAS;
 } GraphResp deriving(Bits, Eq);
 
 typedef Bit#(32) WLPriority;
@@ -54,7 +67,8 @@ typedef Tuple2#(Bool, WLEntry) WLSpillResp; // True = Read, False = Write
 typedef enum {
    MK_SSSP = 0,
    MK_ENGINE = 1,
-   MK_WORKLIST = 2
+   MK_WORKLIST = 2,
+   MK_GRAPH = 3
 } GaloisModule deriving(Bits, Eq);
 
 typedef struct {

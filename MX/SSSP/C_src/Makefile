@@ -7,7 +7,7 @@ BCLIB_OBJ_BSIM = ../../BClib_obj_bsim/
 TARGET ?= SIM
 
 CC = cc
-CFLAGS = -fPIC -O3 -DFOR_$(TARGET) -D_FILE_OFFSET_BITS=64  -I$(BCLIB_OBJ_BSIM)
+CFLAGS = -fPIC -O0 -g -DFOR_$(TARGET) -D_FILE_OFFSET_BITS=64  -I$(BCLIB_OBJ_BSIM)
 
 OBJECTS = $(BUILD_DIR)/App_SW.o $(BUILD_DIR)/timing.o  $(BUILD_DIR)/instrumentation.o
 
@@ -34,4 +34,4 @@ $(BUILD_DIR)/instrumentation.o: instrumentation.h instrumentation.c
 # ----------------------------------------------------------------
 .PHONY: clean
 clean:
-	rm -f  *~  *.o
+	rm -f  *~  *.o $(BUILD_DIR)/*.o

@@ -5,5 +5,10 @@
 `define WL_SPILL_PORTS 16
 `define WL_WLFIFO_SIZE 1024
 
+`define GRAPH_PORTS 16
+`define GRAPH_NUM_IN_FLIGHT 32
+
+`define LG_GRAPH_NODE_SIZE 4
+`define LG_GRAPH_EDGE_SIZE 3
 
 `endif

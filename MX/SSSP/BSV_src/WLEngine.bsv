@@ -40,6 +40,7 @@ endinterface
 `define LG_WLENTRY_SIZE 3
 `define WLENGINE_BACKOFF 128
 
+(* synthesize *)
 module mkWLEngine(WLEngine);
     // memOffset[0]: lock bit
     // memOffset[1]: headPtr
@@ -114,13 +115,13 @@ module mkWLEngine(WLEngine);
                readFSM_lockData <= 32'b1;
                readFSM_bufIdx <= fromMaybe(?, bufInWriteIdxW.wget());
                readFSM_buf <= fromMaybe(?, bufInWriteBufW.wget());
-               $display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d idx %0d...", cur_cycle, fpgaId, fromMaybe(?, bufInWriteBufW.wget()), fromMaybe(?, bufInWriteIdxW.wget()));
+               //$display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d idx %0d...", cur_cycle, fpgaId, fromMaybe(?, bufInWriteBufW.wget()), fromMaybe(?, bufInWriteIdxW.wget()));
            endaction
            
            // Obtain global worklist lock
            while(readFSM_lockData == 32'd1) seq
                action
-                   $display("%0d: mkWLEngine[%0d]: Reading lock bit at addr: %0x...", cur_cycle, fpgaId, lockLoc);
+                   //$display("%0d: mkWLEngine[%0d]: Reading lock bit at addr: %0x...", cur_cycle, fpgaId, lockLoc);
                    memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_ATOM_CAS, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0001});
                endaction
            
@@ -128,17 +129,17 @@ module mkWLEngine(WLEngine);
                    BC_MC_RSP rsp = memRespQ[0].first();
                    memRespQ[0].deq();
                    readFSM_lockData <= truncate(rsp.data);
-                   $display("%0d: mkWLEngine[%0d]: old lock bit = %0d", cur_cycle, fpgaId, rsp.data);
+                   //$display("%0d: mkWLEngine[%0d]: old lock bit = %0d", cur_cycle, fpgaId, rsp.data);
                    // Data is the old data, so if 1 then it failed
                    if(truncate(rsp.data) == 32'd1) begin
-                       $display("  Someone currently using it, retry...");
+                       //$display("  Someone currently using it, retry...");
                    end
                endaction
           endseq
            
            // Get updated head and tail pointers
            action
-               $display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
+               //$display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
                Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
                memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: headPtrLoc, data: ?});
                memReqQ[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: tailPtrLoc, data: ?});
@@ -149,7 +150,7 @@ module mkWLEngine(WLEngine);
                BC_MC_RSP tailRsp = memRespQ[1].first();
                memRespQ[0].deq();
                memRespQ[1].deq();
-               $display("%0d: mkWLEngine[%0d]: headPtr: %0x, tailPtr: %0x", cur_cycle, fpgaId, headRsp.data, tailRsp.data);
+               //$display("%0d: mkWLEngine[%0d]: headPtr: %0x, tailPtr: %0x", cur_cycle, fpgaId, headRsp.data, tailRsp.data);
                headPtr <= truncate(pack(headRsp.data));
                tailPtr <= truncate(pack(tailRsp.data));
            endaction
@@ -172,7 +173,7 @@ module mkWLEngine(WLEngine);
                else begin
                    entries = size;
                end
-               $display("%0d: mkWLEngine[%0d]: mkFSM WL size: %0d, reading %0d entries", cur_cycle, fpgaId, size, entries);
+               //$display("%0d: mkWLEngine[%0d]: mkFSM WL size: %0d, reading %0d entries", cur_cycle, fpgaId, size, entries);
                readFSM_numEntries <= entries;
                readFSM_curEntry <= 0;
            endaction
@@ -181,7 +182,7 @@ module mkWLEngine(WLEngine);
            if(readFSM_numEntries > 0) seq
                while(readFSM_curEntry < readFSM_numEntries) seq
                    action
-                       $display("Reading entry %0d of %0d...", readFSM_curEntry, readFSM_numEntries);
+                       //$display("Reading entry %0d of %0d...", readFSM_curEntry, readFSM_numEntries);
                        BC_Addr addr = bufferLoc + (headPtr << `LG_WLENTRY_SIZE);
                        Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
                        
@@ -202,7 +203,7 @@ module mkWLEngine(WLEngine);
                        memRespQ[0].deq();
                        
                        WLEntry entry = unpack(rsp.data);
-                       $display("%0d: mkWLEngine[%0d]: entry priority: %0d, graphId: %0d", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
+                       //$display("%0d: mkWLEngine[%0d]: entry priority: %0d, graphId: %0d", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
                        if(readFSM_bufIdx == 0)
                          bufIn0[readFSM_bufIdx].enq(entry);
                        else
@@ -212,7 +213,7 @@ module mkWLEngine(WLEngine);
                
                // Write head and tailPtrs
                action
-                   $display("%0d: mkWLEngine[%0d]: readFSM writing new head/tail ptrs", cur_cycle, fpgaId);
+                   //$display("%0d: mkWLEngine[%0d]: readFSM writing new head/tail ptrs", cur_cycle, fpgaId);
                    Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
                    memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: gaddr, len: BC_8B, vadr: headPtrLoc, data: extend(headPtr)});
                    memReqQ[1].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: gaddr, len: BC_8B, vadr: tailPtrLoc, data: extend(tailPtr)});
@@ -226,18 +227,18 @@ module mkWLEngine(WLEngine);
                    memRespQ[1].deq();
                    memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0000});
                    
-                   $display("%0d: mkWLEngine[%0d]: readFSM done, unlocking!", cur_cycle, fpgaId);
+                   //$display("%0d: mkWLEngine[%0d]: readFSM done, unlocking!", cur_cycle, fpgaId);
                endaction
            endseq
            else seq
                // No data, unlock and stall avoid needless contention
-              action
+               action
                    memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0000});
                    
-                   $display("%0d: mkWLEngine[%0d]: readFSM done, unlocking!", cur_cycle, fpgaId);
+                   //$display("%0d: mkWLEngine[%0d]: readFSM done, unlocking!", cur_cycle, fpgaId);
                endaction
                
-               $display("%0d: mkWLEngine[%0d]: readFSM nothing to read, stalling for %0d cycles", cur_cycle, fpgaId, `WLENGINE_BACKOFF);
+               //$display("%0d: mkWLEngine[%0d]: readFSM nothing to read, stalling for %0d cycles", cur_cycle, fpgaId, `WLENGINE_BACKOFF);
                readFSM_backOff <= 0;
                while(readFSM_backOff < `WLENGINE_BACKOFF) seq
                    action

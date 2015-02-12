@@ -136,6 +136,7 @@ module mkBC_MC_Model #(parameter UInt #(2) fpga, parameter UInt #(4) bank)
 
    function Action check_addr (BC_DataSize size, BC_Addr addr);
       action
+     /*
 	 if (addr [8:6] != pack (bank)[3:1]) begin
 	    if (rg_debug_stop_on_wrong_bank || (rg_debug_mem_trace_verbosity != 0))
 	       $display ("WARNING: MC [fpga %0d][bank %0d] received request for MC [%0h] (addr = 0x%012h)",
@@ -143,7 +144,7 @@ module mkBC_MC_Model #(parameter UInt #(2) fpga, parameter UInt #(4) bank)
 	    if (rg_debug_stop_on_wrong_bank)
 	       $finish (1);
 	 end
-
+     */
 	 Bool alignment_error = False;
 	 case (size)
 	    BC_2B: alignment_error = (addr[0] != 0);
