@@ -24,6 +24,7 @@ import GaloisTypes::*;
 interface Engine;
     method Action init(BC_AEId fpgaId);
     method ActionValue#(Bit#(64)) result;
+    method Bool isDone;
     
     interface Put#(WLEntry) workIn;
     interface Get#(WLEntry) workOut;
@@ -53,6 +54,11 @@ module mkSSSPEngine(Engine);
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ1 <- mkSizedFIFOF(2);
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ2 <- mkSizedFIFOF(16); // # entries = # CAS requests in flight
     
+    Reg#(Bit#(48)) numWorkFetched <- mkRegU;
+    Reg#(Bit#(48)) numWorkRetired <- mkRegU;
+    Reg#(Bit#(48)) numEdgesFetched <- mkRegU;
+    Reg#(Bit#(48)) numEdgesRetired <- mkRegU;
+    Reg#(Bit#(48)) numEdgesDiscarded <- mkRegU;
     
     function Bool isChannel(GraphResp resp, Channel chan);
         Bool ret = False;
@@ -63,6 +69,27 @@ module mkSSSPEngine(Engine);
         end
         return ret;
     endfunction
+    
+    rule calcDone;
+        
+        Bool workEmpty = !workInQ.notEmpty && !workOutQ.notEmpty;
+
+        function Bool graphF(Integer x) = !graphRespQs[x].notEmpty;
+        function Bool isTrue(Bool x) = x;
+        Vector#(4, Bool) graphsEmpty = genWith(graphF);
+        Bool graphEmpty = !graphReqQ.notEmpty && !graphRespQ.notEmpty && all(isTrue, graphsEmpty);
+        Bool nodesEmpty = !graphNodeQ1.notEmpty && !graphNodeQ2.notEmpty && !graphNodeQ3.notEmpty;
+        Bool casEmpty = !newDistQ.notEmpty && !casContextQ1.notEmpty && !casContextQ2.notEmpty;
+        
+        if(workEmpty && graphEmpty && nodesEmpty && casEmpty) begin
+            //if(!done)
+                //$display("%0d: SSSPEngine[%0d] idle -> DONE", cur_cycle, fpgaId);
+            done <= True;
+        end
+        else begin
+            done <= False;
+        end
+    endrule
     
     rule respQ_distribute;
         GraphResp resp = graphRespQ.first;
@@ -94,9 +121,10 @@ module mkSSSPEngine(Engine);
         $display("%0d: ~~~ SSSPEngine[%0d]: START getSrcNode priority: %0d, nodeID: %0d", cur_cycle, fpgaId, tpl_1(pkt), job);
         
         graphReqQ.enq(tagged ReadNode{id: job, channel: 0});
+        numWorkFetched <= numWorkFetched + 1;
     endrule
     
-    rule recvSrcNode; //(isChannel(graphRespQ.first, 0));
+    rule recvSrcNode;
         if(graphRespQs[0].first matches tagged Node .gnode) begin
             graphRespQs[0].deq();
             GraphNode node = gnode.node;
@@ -116,16 +144,19 @@ module mkSSSPEngine(Engine);
         graphReqQ.enq(tagged ReadEdge{edgeID: edgeID, channel: 1});
         graphNodeQ2.enq(node);
         $display("%0d: ~~~~ SSSPEngine[%0d]: getEdges %0d of %0d", cur_cycle, fpgaId, edgeIdx, node.numEdges-1);
+        numEdgesFetched <= numEdgesFetched + 1;
+        
         if(edgeIdx == (node.numEdges - 1)) begin
             edgeIdx <= 0;
             graphNodeQ1.deq();
+            numWorkRetired <= numWorkRetired + 1;
         end
         else begin
             edgeIdx <= edgeIdx + 1;
         end
     endrule
     
-    rule getDestNode; //(isChannel(graphRespQ.first, 1));
+    rule getDestNode;
         if(graphRespQs[1].first matches tagged Edge .gedge) begin
             graphRespQs[1].deq();
             
@@ -171,6 +202,9 @@ module mkSSSPEngine(Engine);
             graphReqQ.enq(tagged CAS{id: tpl_3(cxt).id, cmpVal: tpl_1(cxt), swapVal: tpl_2(cxt), channel: 3});
             casContextQ2.enq(cxt);
         end
+        else begin
+            numEdgesDiscarded <= numEdgesDiscarded + 1;
+        end
     endrule
     
     rule cas_done; //(isChannel(graphRespQ.first, 3));
@@ -186,6 +220,7 @@ module mkSSSPEngine(Engine);
                 WLEntry newWork = tuple2(0, node.id);
                 workOutQ.enq(newWork);
                 $display("%0d: SSSPEngine[%0d]: CAS Success! Enqueueing new work item: ", cur_cycle, fpgaId, fshow(newWork));
+                numEdgesRetired <= numEdgesRetired + 1;
             end
             else begin
                 casContextQ1.enq(tuple3(cas.oldVal, tpl_2(cxt), tpl_3(cxt)));
@@ -202,10 +237,20 @@ module mkSSSPEngine(Engine);
         fpgaId <= fpgaid;
         started <= True;
         done <= False;
+        
+        numWorkFetched <= 0;
+        numWorkRetired <= 0;
+        numEdgesFetched <= 0;
+        numEdgesRetired <= 0;
+        numEdgesDiscarded <= 0;
     endmethod
     
     method ActionValue#(Bit#(64)) result() if(done);
         return 64'hDEAD_BEEF;
+    endmethod
+    
+    method Bool isDone;
+        return done;
     endmethod
     
     interface workIn = toPut(workInQ);

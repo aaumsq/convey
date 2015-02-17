@@ -32,7 +32,7 @@ interface Worklist;
     interface Vector#(`WL_ENGINE_PORTS, Put#(BC_MC_RSP)) memResp;
     
     method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
-    
+    method Bool isDone();
 endinterface
 
 
@@ -40,8 +40,21 @@ endinterface
 module mkWorklistFIFO(Worklist);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineQ <- replicateM(mkSizedBRAMFIFOF(1024));
+    Reg#(Bool) done <- mkRegU;
     
     WLEngine engine <- mkWLEngine();
+    
+    Vector#(`WL_ENGINE_PORTS, Wire#(Bool)) enqValid <- replicateM(mkDWire(False));
+
+    rule calcDone;
+        function Bool enqF(Integer x) = !enqValid[x];
+        function Bool engineF(Integer x) = !engineQ[x].notEmpty;
+        function Bool isTrue(Bool x) = x;
+        Vector#(`WL_ENGINE_PORTS, Bool) noEnqs = genWith(enqF);
+        Vector#(`WL_ENGINE_PORTS, Bool) engineEmpties = genWith(engineF);
+        done <= all(isTrue, noEnqs) && all(isTrue, engineEmpties);
+        //$display("noEnqs: %b, engineEmpties: %b", noEnqs, engineEmpties);
+    endrule
     
     for(Integer i = 0; i < `WL_ENGINE_PORTS; i = i + 1) begin
         
@@ -55,6 +68,7 @@ module mkWorklistFIFO(Worklist);
     function Put#(WLEntry) mkEnqF(Integer i);
         return interface Put#(WLEntry);
             method Action put(WLEntry pkt);
+                enqValid[i] <= True;
                 if(engineQ[i].notFull)
                     engineQ[i].enq(pkt);
                 else
@@ -91,6 +105,11 @@ module mkWorklistFIFO(Worklist);
     method Action init(BC_AEId fpgaid, BC_Addr lockloc, BC_Addr headptrloc, BC_Addr tailptrloc, BC_Addr maxsize, BC_Addr bufferloc);
         $display("%0d: mkWorklistFIFO[%0d]: INIT", cur_cycle, fpgaid);
         engine.init(fpgaid, lockloc, headptrloc, tailptrloc, maxsize, bufferloc);
+        done <= False;
+    endmethod
+    
+    method Bool isDone;
+        return done;
     endmethod
     
     interface enq = genWith(mkEnqF);

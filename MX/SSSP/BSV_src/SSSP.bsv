@@ -27,14 +27,6 @@ import GaloisTypes::*;
 `define NUM_ENGINES 16
 `define LG_NUM_ENGINES 4
 
-/*
-interface App_Ifc;
-    method Action start(BC_AEId fpga_id, BC_Data param_block_addr);
-    method Action waitTillDone;
-    
-    interface Vector#(16, BC_MC_Client) mc_ifcs;
-endinterface
-*/
 
 interface BC_HW2_IFC;
    method Action start (BC_AEId fpga_id, BC_Data param_block_addr);
@@ -70,6 +62,9 @@ module mkSSSP(BC_HW2_IFC);
     Reg#(BC_Addr) paramSentinel <- mkRegU;
     
     Reg#(Bit#(`NUM_ENGINES)) engineDoneIdx <- mkRegU; // need +1 for terminating condition
+    Reg#(Bool) allDone <- mkRegU;
+    Reg#(Bit#(10)) numAllDones <- mkRegU;
+    
     Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ  <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
     Vector #(16, FIFOF #(BC_MC_flush_req)) f_flush_reqs <- replicateM (mkFIFOF);
@@ -262,14 +257,33 @@ module mkSSSP(BC_HW2_IFC);
                // Start the N engines
 	           for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) action
 	               engines[i].init(fpgaId);
-                   //engines[i].start(fpgaId, fromInteger(i), nodePtr, edgePtr, jobsPtr, numJobs, outputPtr, status);
 	           endaction
            endaction
            // Wait for completion
-	       for (engineDoneIdx <= 0; engineDoneIdx < fromInteger(`NUM_ENGINES); engineDoneIdx <= engineDoneIdx + 1) action
-	           let result <- engines[engineDoneIdx].result;
-	           engineResults[engineDoneIdx] <= result;
-	       endaction
+           allDone <= False;
+           numAllDones <= 0;
+           while(numAllDones < 10) seq
+               $display("%0d: SSSP[%0d]: Checking allDones %0d...", cur_cycle, fpgaId, numAllDones);
+               allDone <= True;
+               action
+                   if(!worklist.isDone) begin
+                     allDone <= False;
+                   end
+               endaction
+	           for (engineDoneIdx <= 0; engineDoneIdx < fromInteger(`NUM_ENGINES); engineDoneIdx <= engineDoneIdx + 1) action
+                   if(!engines[engineDoneIdx].isDone) begin
+                     allDone <= False;
+                     $display("%0d: SSSP[%0d]: Engine %0d not done!", cur_cycle, fpgaId, engineDoneIdx);
+                   end
+	           endaction
+               if(allDone)
+                   numAllDones <= numAllDones + 1;
+           endseq
+
+           $display("%0d: SSSP[%0d]: All Done!", cur_cycle, fpgaId);
+           //let result <- engines[engineDoneIdx].result;
+	       //engineResults[engineDoneIdx] <= result;
+
            
            
 	       // Write final (per-FPGA) sum back to param block, and drain the response
@@ -298,8 +312,8 @@ module mkSSSP(BC_HW2_IFC);
         fsm.start;
     endmethod
     
-    method Action waitTillDone if(False); //if(fsm.done);
-    
+    method Action waitTillDone if(fsm.done);
+        $display("[%0d]: mkSSSP[%0d] waitTillDone FINISHED!!!", cur_cycle, fpgaId);
     endmethod
     
     interface mc_ifcs = genWith(fn_mkMC_Client);
