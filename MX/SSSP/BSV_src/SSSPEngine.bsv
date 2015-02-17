@@ -71,19 +71,12 @@ module mkSSSPEngine(Engine);
     endfunction
     
     rule calcDone;
-        
         Bool workEmpty = !workInQ.notEmpty && !workOutQ.notEmpty;
-
-        function Bool graphF(Integer x) = !graphRespQs[x].notEmpty;
-        function Bool isTrue(Bool x) = x;
-        Vector#(4, Bool) graphsEmpty = genWith(graphF);
-        Bool graphEmpty = !graphReqQ.notEmpty && !graphRespQ.notEmpty && all(isTrue, graphsEmpty);
-        Bool nodesEmpty = !graphNodeQ1.notEmpty && !graphNodeQ2.notEmpty && !graphNodeQ3.notEmpty;
-        Bool casEmpty = !newDistQ.notEmpty && !casContextQ1.notEmpty && !casContextQ2.notEmpty;
         
-        if(workEmpty && graphEmpty && nodesEmpty && casEmpty) begin
-            //if(!done)
-                //$display("%0d: SSSPEngine[%0d] idle -> DONE", cur_cycle, fpgaId);
+        Bool noNodesInFlight = (numWorkFetched == numWorkRetired);
+        Bool noEdgesInFlight = (numEdgesFetched == (numEdgesRetired + numEdgesDiscarded));
+        
+        if(workEmpty && noNodesInFlight && noEdgesInFlight) begin
             done <= True;
         end
         else begin
