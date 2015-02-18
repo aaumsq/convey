@@ -71,17 +71,17 @@ module mkSSSP(BC_HW2_IFC);
     Vector #(16, FIFOF #(BC_MC_flush_rsp)) f_flush_rsps <- replicateM (mkFIFOF);
     
     Vector#(`NUM_ENGINES, Engine) engines <- replicateM(mkSSSPEngine);
-    Vector#(`NUM_ENGINES, FIFOF#(BC_MC_REQ)) engineOutQs <- replicateM(mkBypassFIFOF);
-    Vector#(`NUM_ENGINES, FIFOF#(BC_MC_RSP)) engineInQs  <- replicateM(mkBypassFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(BC_MC_REQ)) engineOutQs <- replicateM(mkFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(BC_MC_RSP)) engineInQs  <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, Reg#(Bit#(64))) engineResults <- replicateM(mkRegU);
     
     Worklist worklist <- mkWorklistFIFO();
-    Vector#(16, FIFOF#(BC_MC_REQ)) worklistOutQs <- replicateM(mkBypassFIFOF);
-    Vector#(16, FIFOF#(BC_MC_RSP)) worklistInQs  <- replicateM(mkBypassFIFOF);
+    Vector#(16, FIFOF#(BC_MC_REQ)) worklistOutQs <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(BC_MC_RSP)) worklistInQs  <- replicateM(mkFIFOF);
     
     GraphEngine graph <- mkGraphEngine();
-    Vector#(16, FIFOF#(BC_MC_REQ)) graphOutQs <- replicateM(mkBypassFIFOF);
-    Vector#(16, FIFOF#(BC_MC_RSP)) graphInQs  <- replicateM(mkBypassFIFOF);
+    Vector#(16, FIFOF#(BC_MC_REQ)) graphOutQs <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(BC_MC_RSP)) graphInQs  <- replicateM(mkFIFOF);
     
     for(Integer i = 0; i < 16; i = i + 1) begin
 

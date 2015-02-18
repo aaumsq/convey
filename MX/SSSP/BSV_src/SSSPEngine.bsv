@@ -43,12 +43,11 @@ module mkSSSPEngine(Engine);
     FIFOF#(WLEntry) workOutQ <- mkFIFOF;
     
     FIFOF#(GraphReq) graphReqQ <- mkSizedFIFOF(16);
-    FIFOF#(GraphResp) graphRespQ <- mkSizedBypassFIFOF(2);
+    FIFOF#(GraphResp) graphRespQ <- mkSizedFIFOF(2);
     Vector#(4, FIFOF#(GraphResp)) graphRespQs <- replicateM(mkSizedFIFOF(16));
     
-    FIFOF#(GraphNode) graphNodeQ1 <- mkSizedBypassFIFOF(2);
+    FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(2);
     FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(16);  // # entries = # edgeReq in flight
-    FIFOF#(GraphNode) graphNodeQ3 <- mkSizedBypassFIFOF(2);
     
     FIFOF#(NodePayload) newDistQ <- mkSizedFIFOF(2);
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ1 <- mkSizedFIFOF(2);
@@ -159,7 +158,6 @@ module mkSSSPEngine(Engine);
             GraphEdge e = gedge.gedge;
             NodePayload newDist = n.payload + e.weight;
             newDistQ.enq(newDist);
-            //graphNodeQ3.enq(n);
             $display("%0d: ~~~~ SSSPEngine[%0d]: getDestNode num %0d", cur_cycle, fpgaId, e.dest);
             graphReqQ.enq(tagged ReadNode{id: e.dest, channel: 2});
         end
