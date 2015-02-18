@@ -16,6 +16,9 @@ OBJECTS = $(BUILD_DIR)/App_SW.o $(BUILD_DIR)/timing.o  $(BUILD_DIR)/instrumentat
 .PHONY: default
 default: $(OBJECTS)
 
+dij:
+	g++ CRS.cpp sssp_dij.cpp
+
 # ----------------------------------------------------------------
 
 $(BUILD_DIR)/App_SW.o: App_SW.cpp  timing.h  instrumentation.h
