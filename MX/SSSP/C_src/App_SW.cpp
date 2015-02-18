@@ -178,7 +178,7 @@ int App_SW (const char *file)
     
     #define INIT_IDX 0
     
-    jobs[0].priority = 1;
+    jobs[0].priority = 0;
     jobs[0].graphId = INIT_IDX;
     nodes[INIT_IDX].payload = 0;
     
@@ -260,14 +260,11 @@ int App_SW (const char *file)
     fprint_delta_time (stdout);
 
     // ----------------------------------------------------------------
-    // Collect the partial sums
-    cny_cp_memcpy (param_block, cp_param_block, param_block_size);
-
-    for (fpga = 0; fpga < NUM_FPGAs; fpga++) {
-        Output* out = (Output*)(&(param_block [PARAM_OUTPUT * 8 + fpga]));
-        printf ("C: partial sum [%0d] = %0llx, %0lld\n", fpga, out->done, out->result);
+    // Print out new node payloads
+    cny_cp_memcpy (nodes, cp_nodes, numNodes*sizeof(Node));
+    for(int i = 0; i < numNodes; i++) {
+        printf("  nodes[%d] = {%d, *%d, %d, %d}\n", i, nodes[i].id, nodes[i].payload, nodes[i].edgePtr, nodes[i].numEdges);
     }
-
     // ----------------------------------------------------------------
     // Stop status monitoring
     // bc_stop_instrumentation ();
