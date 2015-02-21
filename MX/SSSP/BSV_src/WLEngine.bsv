@@ -23,7 +23,6 @@ import GaloisTypes::*;
 
 interface WLEngine;
     interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) streamIn;
-    interface Vector#(`WL_ENGINE_PORTS, Reg#(Bool)) emptyReq;
     interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) streamOut;
 
     interface Vector#(16, Get#(BC_MC_REQ)) memReq;
@@ -105,7 +104,7 @@ module mkWLEngine(WLEngine);
     Reg#(Bit#(32)) readFSM_lockData <- mkRegU;
     Reg#(BC_Addr) readFSM_numEntries <- mkRegU;
     Reg#(BC_Addr) readFSM_curEntry <- mkRegU;
-    Reg#(Bit#(32)) readFSM_backOff <- mkRegU;
+    Reg#(Bit#(10)) readFSM_backOff <- mkRegU;
     Reg#(Bit#(`WL_LG_ENGINE_PORTS)) readFSM_bufIdx <- mkRegU;
     Reg#(Bit#(1)) readFSM_buf <- mkRegU;
     
@@ -245,6 +244,10 @@ module mkWLEngine(WLEngine);
                        readFSM_backOff <= readFSM_backOff + 1;
                    endaction
                endseq
+               
+               action
+                   noAction;
+               endaction
            endseq           
        endseq
        );
