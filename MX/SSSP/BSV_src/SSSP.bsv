@@ -69,6 +69,9 @@ module mkSSSP(BC_HW2_IFC);
     Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
     Vector #(16, FIFOF #(BC_MC_flush_req)) f_flush_reqs <- replicateM (mkFIFOF);
     Vector #(16, FIFOF #(BC_MC_flush_rsp)) f_flush_rsps <- replicateM (mkFIFOF);
+
+    Vector#(16, FIFOF#(BC_MC_REQ)) ssspOutQs <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(BC_MC_RSP)) ssspInQs  <- replicateM(mkFIFOF);
     
     Vector#(`NUM_ENGINES, Engine) engines <- replicateM(mkSSSPEngine);
     Vector#(`NUM_ENGINES, FIFOF#(BC_MC_REQ)) engineOutQs <- replicateM(mkFIFOF);
@@ -97,7 +100,7 @@ module mkSSSP(BC_HW2_IFC);
         mkConnection(graph.memReq[i], toPut(graphOutQs[i]));
         mkConnection(toGet(graphInQs[i]), graph.memResp[i]);
         
-        rule toMem(engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty);
+        rule toMem(engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty || ssspOutQs[i].notEmpty);
             if(graphOutQs[i].notEmpty) begin
                 BC_MC_REQ req = graphOutQs[i].first();
                 graphOutQs[i].deq();
@@ -116,14 +119,21 @@ module mkSSSP(BC_HW2_IFC);
                 memReqQ[i].enq(req);
                 //$display("toMem WorkList routing to mem %0d ", i, fshow(req));
             end
+            else if(ssspOutQs[i].notEmpty) begin
+                BC_MC_REQ req = ssspOutQs[i].first();
+                ssspOutQs[i].deq();
+                memReqQ[i].enq(req);
+                $display("toMem SSSP routing to mem %0d ", i, fshow(req));
+            end 
         endrule
         
         // rtnctl: 0 means it's for mkSSSP
-        rule fromMem(unpack(memRespQ[i].first.rtnctl).mod != MK_SSSP);
+        rule fromMem;
             BC_MC_RSP resp = memRespQ[i].first();
             memRespQ[i].deq();
             
             GaloisAddress gaddr = unpack(resp.rtnctl);
+            $display("Received packed gaddr %d", gaddr);
             if(gaddr.mod == MK_ENGINE) begin
                 //$display("fromMem packet routing to Engine %0d", i);
                 engineInQs[i].enq(resp);
@@ -134,6 +144,10 @@ module mkSSSP(BC_HW2_IFC);
             end
             else if(gaddr.mod == MK_GRAPH) begin
                 graphInQs[i].enq(resp);
+            end
+            else if(gaddr.mod == MK_SSSP) begin
+                //$display("fromMem packet routing to SSSP %0d", i);
+                ssspInQs[i].enq(resp);
             end
             else begin
                 $display("ERROR: fromMem packet dest unknown: ", fshow(resp));
@@ -146,7 +160,7 @@ module mkSSSP(BC_HW2_IFC);
 	        let addr = base + fromInteger(param_id * 64);
 	        let req = BC_MC_REQ {cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B,
 			   vadr: addr, data: ?};
-	        memReqQ[param_id].enq(req);
+	        ssspOutQs[param_id].enq(req);
             //$display("%0d: mkSSSP[%0d]: send_rd_eq on channel %0d, addr: %0x", cur_cycle, fpgaId, param_id, addr);
         endaction
     endfunction
@@ -156,13 +170,13 @@ module mkSSSP(BC_HW2_IFC);
 	        let addr = base + fromInteger(param_id * 64);
 	        let req = BC_MC_REQ {cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B,
 			   vadr: addr, data: x};
-	        memReqQ[param_id].enq(req);
+	        ssspOutQs[param_id].enq(req);
         endaction
     endfunction
     
     function ActionValue #(BC_Addr) recv_rd_rsp(Integer param_id);
         actionvalue
-	        let rsp <- toGet(memRespQ[param_id]).get;
+	        let rsp <- toGet(ssspInQs[param_id]).get;
             
             // Assertion: the only responses in f_rsps[] should be RSP_RD_DATA responses
 	        // for the parameter read requests
@@ -178,7 +192,7 @@ module mkSSSP(BC_HW2_IFC);
     
     function Action recv_wr_rsp(Integer param_id);
         action
-	        let rsp <- toGet(memRespQ[param_id]).get;
+	        let rsp <- toGet(ssspInQs[param_id]).get;
             
 	        // Assertion: the only responses in f_rsps[] should be RSP_WR_CMP responses
 	        // for the paramter write requests
@@ -208,32 +222,43 @@ module mkSSSP(BC_HW2_IFC);
 	       // Receive the parameters for this FPGA (read responses, in parallel)
 	       action
 	           let nodePtr   <- recv_rd_rsp(param_nodePtr);
-	           let edgePtr   <- recv_rd_rsp(param_edgePtr);
-	           let jobsPtr   <- recv_rd_rsp(param_jobsPtr);
-	           let metaPtr <- recv_rd_rsp(param_metaPtr);
-	           let outputPtr <- recv_rd_rsp(param_output);
-	           let status    <- recv_rd_rsp(param_status);
-	           let sentinel  <- recv_rd_rsp(param_sentinel);
-       
                paramNodePtr <= nodePtr;
+           endaction
+           action
+	           let edgePtr   <- recv_rd_rsp(param_edgePtr);
                paramEdgePtr <= edgePtr;
+           endaction
+           action
+	           let jobsPtr   <- recv_rd_rsp(param_jobsPtr);
                paramJobsPtr <= jobsPtr;
+           endaction
+           action
+	           let metaPtr <- recv_rd_rsp(param_metaPtr);
                paramMetaPtr <= metaPtr;
+           endaction
+           action
+	           let outputPtr <- recv_rd_rsp(param_output);
                paramOutputPtr <= outputPtr;
+           endaction
+           action
+	           let status    <- recv_rd_rsp(param_status);
                paramStatus <= status;
+           endaction
+           action
+	           let sentinel  <- recv_rd_rsp(param_sentinel);
                paramSentinel <= sentinel;
-               
-	           $display ("%0d: mkSSSP [%0d]: params are %0h 0x%0h 0x%0h 0x%0h %0h %0h %0h", cur_cycle, fpgaId, nodePtr, edgePtr, jobsPtr, metaPtr, outputPtr, status, sentinel);
-               
-	       endaction
+           endaction
+           action
+               $display ("%0d: mkSSSP [%0d]: params are %0h 0x%0h 0x%0h 0x%0h %0h %0h %0h", cur_cycle, fpgaId, paramNodePtr, paramEdgePtr, paramJobsPtr, paramMetaPtr, paramOutputPtr, paramStatus, paramSentinel);
+           endaction
            
            // Read metadata
            action
                Bit#(32) rtn = pack(GaloisAddress{mod: MK_SSSP, addr: 0});
-               memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_lock*8), data: ?});
-	           memReqQ[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_headPtr*8), data: ?});
-	           memReqQ[2].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_tailPtr*8), data: ?});
-	           memReqQ[3].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_wlSize*8), data: ?});
+               ssspOutQs[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_lock*8), data: ?});
+	           ssspOutQs[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_headPtr*8), data: ?});
+	           ssspOutQs[2].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_tailPtr*8), data: ?});
+	           ssspOutQs[3].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_wlSize*8), data: ?});
            endaction
            
            action
