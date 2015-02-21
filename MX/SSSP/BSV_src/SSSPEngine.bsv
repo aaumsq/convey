@@ -33,7 +33,7 @@ interface Engine;
     interface Put#(GraphResp) graphResp;
 endinterface
 
-(* synthesize, descending_urgency = "recvDestNode, getDestNode, getEdges, recvSrcNode" *)
+(* synthesize, descending_urgency = "casDone, cas, recvDestNode, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
 module mkSSSPEngine(Engine);
     Reg#(BC_AEId) fpgaId <-mkRegU;
     Reg#(Bool) started <- mkReg(False);
@@ -99,10 +99,6 @@ module mkSSSPEngine(Engine);
             graphRespQs[x.channel].enq(resp);
             //$display("~~~ SSSPEngine GraphResp CAS sending to channel %0d", x.channel);
         end
-    endrule
-    
-    rule respQWatch;
-        //$display("graphRespQ available packet: %x", graphRespQ.first);
     endrule
     
     rule getSrcNode(started);
@@ -198,7 +194,7 @@ module mkSSSPEngine(Engine);
         end
     endrule
     
-    rule cas_done; //(isChannel(graphRespQ.first, 3));
+    rule casDone; //(isChannel(graphRespQ.first, 3));
         if(graphRespQs[3].first matches tagged CAS .cas) begin
             graphRespQs[3].deq();
             
