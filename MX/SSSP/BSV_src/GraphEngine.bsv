@@ -21,6 +21,7 @@ import BC_Transactors     :: *;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 import GraphLane::*;
+import GraphLanePipe::*;
 
 interface GraphEngine;
     interface Vector#(`GRAPH_PORTS, Put#(GraphReq)) req;
@@ -40,7 +41,7 @@ module mkGraphEngine(GraphEngine);
     Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
     
-    Vector#(16, GraphLane) pipes <- replicateM(mkGraphLane);
+    Vector#(16, GraphLane) pipes <- replicateM(mkGraphLanePipe);
 
     function Put#(GraphReq) genReq(Integer i) = pipes[i].req;
     function Get#(GraphResp) genResp(Integer i) = pipes[i].resp;
