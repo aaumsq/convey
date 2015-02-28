@@ -155,7 +155,7 @@ endinterface
    default_clock_osc = "clk",
    default_gate_inhigh,
    default_reset = "i_reset" *)
-module cae_pers (Cae_Pers_IFC);
+module mkCae_pers (Cae_Pers_IFC);
 
    // ----------------------------------------------------------------
    // Instantiate the BSV app

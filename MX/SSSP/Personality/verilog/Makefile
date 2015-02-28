@@ -2,4 +2,4 @@
 
 .PHONY: clean
 clean:
-	rm -f  mk*.v  cae_pers.v
+	rm -f  mk*.v
