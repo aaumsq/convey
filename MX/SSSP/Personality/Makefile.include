@@ -20,9 +20,10 @@ USER_VERILOG_DIRS += $(BCLIB)/BClib_verilog
 
 
 # PDK location and revision
-# export CNY_PDK = /opt/convey/pdk
-export CNY_PDK = /opt/convey/pdk_mx
-export CNY_PDK_REV = latest
+export CNY_PDK = /opt/convey/pdk
+#export CNY_PDK = /opt/convey/pdk_mx
+#export CNY_PDK_REV = 2015.01.26-3008_mx
+export CNY_PDK_REV = 2015.02.17-3056_mx
 
 # Uncomment one of these for your particular Convey platform
 # export CNY_PDK_PLATFORM = hc-1
@@ -35,8 +36,8 @@ export CNY_PDK_PLATFORM = MX
 export PERS_IF_TYPE = 1
 
 # The following omits/inserts the Convey PDK on-FPGA memory crossbar
-export MC_XBAR = 0
-# export MC_XBAR = 1
+#export MC_XBAR = 0
+export MC_XBAR = 1
 
 # The following omits/inserts the Convey PDK memory-ordering logic
 # export MC_READ_ORDER = 0
@@ -54,6 +55,7 @@ export CLK_PERS_FREQ = 150
 # Personality supports asynchronous core clock
 #   CLK_PERS_RATIO = 0 for synchronous (default)
 #   CLK_PERS_RATIO = 2 for async frequency between 75 and 300 MHz
+export CLK_PERS_RATIO = 0
 
 # We don't use HDL simulation, but the PDK seems to insist on a def for CNY_PDK_HDLSIM
 export CNY_PDK_HDLSIM = Synopsys
