@@ -15,7 +15,7 @@ export BCLIB_VDIR     = $(BCLIB)/BClib_verilog
 
 BSCDIRS_BSIM  = -simdir build_bsim  -bdir build_bsim  -info-dir build_bsim
 BSCDIRS_V     = -vdir Personality/verilog  -bdir build_v  -info-dir build_v
-BSCFLAGS = -aggressive-conditions -no-show-method-conf -no-warn-action-shadowing -parallel-sim-link 8
+BSCFLAGS = -aggressive-conditions -no-show-method-conf -no-warn-action-shadowing -parallel-sim-link 8 -show-schedule
 
 C_OBJECTS = build_bsim/App_SW.o  \
             build_bsim/timing.o  \
@@ -64,7 +64,7 @@ simulate:
 verilog: build_v
 	@echo Verilog generation ...
 	bsc -u -verilog $(BSCDIRS_V) $(BSCFLAGS) -p .:./BSV_src:$(BCLIB_OBJ_V):%/Prelude:%/Libraries \
-	    -g cae_pers  $(BCLIB_SRC)/Cae_Pers.bsv
+	    -g mkCae_pers  $(BCLIB_SRC)/Cae_Pers.bsv
 	@echo Verilog generation finished
 
 # ----------------------------------------------------------------
