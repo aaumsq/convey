@@ -35,7 +35,13 @@ endinterface
 (* synthesize *)
 module mkGraphEngine(GraphEngine);
     Reg#(Bool) started <- mkReg(False);
-    
+    Reg#(BC_AEId) fpgaId <- mkRegU;
+    Reg#(BC_Addr) nodePtr <- mkRegU;
+    Reg#(BC_Addr) edgePtr <- mkRegU;
+    Vector#(16, Reg#(BC_AEId)) fpgaId_staging <- replicateM(mkRegU);
+    Vector#(16, Reg#(BC_Addr)) nodePtr_staging <- replicateM(mkRegU);
+    Vector#(16, Reg#(BC_Addr)) edgePtr_staging <- replicateM(mkRegU);
+
     Vector#(`GRAPH_PORTS, FIFOF#(GraphResp)) respQ <- replicateM(mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT));
 
     Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ <- replicateM(mkFIFOF);
@@ -47,15 +53,42 @@ module mkGraphEngine(GraphEngine);
     function Get#(GraphResp) genResp(Integer i) = pipes[i].resp;
     function Get#(BC_MC_REQ) genMemReq(Integer i) = pipes[i].memReq;
     function Put#(BC_MC_RSP) genMemResp(Integer i) = pipes[i].memResp;
+
+
+    let fsm <- mkFSM(
+       seq
+           action
+               for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
+                   action
+                     fpgaId_staging[i] <= fpgaId;
+                     nodePtr_staging[i] <= nodePtr;
+                     edgePtr_staging[i] <= edgePtr;
+                   endaction
+               endaction
+           endaction
+           action
+               for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
+                   action
+                     pipes[i].init(fpgaId_staging[i], nodePtr_staging[i], edgePtr_staging[i]);
+                   endaction
+               endaction
+           endaction
+       
+           action
+               started <= True;
+           endaction
+       endseq
+    );
+    
     
     method Action init(BC_AEId fpgaid, BC_Addr nodeptr, BC_Addr edgeptr);
         $display("%0d: ~~~~ mkGraphEngine[%0d]: init nodePtr = %0x, edgePtr = %0x", cur_cycle, fpgaid, nodeptr, edgeptr);
-
-        for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) begin
-            pipes[i].init(fpgaid, nodeptr, edgeptr);
-        end
-        started <= True;
-    endmethod
+        fpgaId <= fpgaid;
+        nodePtr <= nodeptr;
+        edgePtr <= edgeptr;
+        
+        fsm.start();
+       endmethod
     
     
     
