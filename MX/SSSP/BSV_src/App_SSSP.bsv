@@ -37,6 +37,7 @@ import BC_Transactors     :: *;
 
 
 import SSSP::*;
+import Clocks::*;
 
 // ================================================================
 // Application-specific aeg count
@@ -48,6 +49,11 @@ Integer aeg_cnt = 1;    // We use only 1 AEG register!
 
 (* synthesize *)
 module mkApp_HW (BC_HW_IFC);
+
+    Clock clk <- exposeCurrentClock;
+    Reset rst <- exposeCurrentReset;
+    
+    MakeResetIfc ssspRst <- mkReset(1, False, clk);
 
    // ----------------------------------------------------------------
    // Instantiate a null management transactor
@@ -70,7 +76,7 @@ module mkApp_HW (BC_HW_IFC);
    // Instantiate the App and use its mem ports directly
    // (assumes ordered memory responses)
    
-    BC_HW2_IFC hw2 <- mkSSSP; //mkApp_HW2;
+    BC_HW2_IFC hw2 <- mkSSSP(reset_by ssspRst.new_rst); //mkApp_HW2;
 
    // ----------------------------------------------------------------
    // Main behavior
@@ -80,6 +86,12 @@ module mkApp_HW (BC_HW_IFC);
 	 // Loop forever, executing caep instructions
 	 while (True) seq
 	    $display ("%0d: mkApp_HW [%0d]: awaiting caep instruction", cur_cycle, aeid);
+        action
+            ssspRst.assertReset();
+        endaction
+        action
+            noAction;
+        endaction
 	    action
 	       // The following just waits for a caep instruction; we don't have to actually
 	       // examine it since we're implementing only one op (CAEP00) with no immediates etc.

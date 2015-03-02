@@ -18,9 +18,12 @@ import BC_Utils           :: *;
 import BC_HW_IFC          :: *;
 import BC_Transactors     :: *;
 
+import Clocks::*;
+
 import SSSPEngine::*;
 import WorklistFIFO::*;
 import GraphEngine::*;
+import CreditChannel::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
@@ -64,6 +67,14 @@ module mkSSSP(BC_HW2_IFC);
     Reg#(Bit#(`NUM_ENGINES)) engineDoneIdx <- mkRegU; // need +1 for terminating condition
     Reg#(Bool) allDone <- mkRegU;
     Reg#(Bit#(10)) numAllDones <- mkRegU;
+    Reg#(Bool) doneResetting <- mkReg(False);
+    
+    Clock clk <- exposeCurrentClock;
+    Reset rst <- exposeCurrentReset;
+    
+    Vector#(16, MakeResetIfc) engineRsts <- replicateM(mkReset(1, False, clk));
+    MakeResetIfc graphRst<- mkReset(1, False, clk);
+    MakeResetIfc worklistRst <- mkReset(1, False, clk);
     
     Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ  <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
@@ -73,18 +84,24 @@ module mkSSSP(BC_HW2_IFC);
     Vector#(16, FIFOF#(BC_MC_REQ)) ssspOutQs <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) ssspInQs  <- replicateM(mkFIFOF);
     
-    Vector#(`NUM_ENGINES, Engine) engines <- replicateM(mkSSSPEngine);
+    Vector#(`NUM_ENGINES, Engine) engines;
+    for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
+        engines[i] <- mkSSSPEngine(reset_by engineRsts[i].new_rst);
+    end
+    Vector#(`NUM_ENGINES, Channel#(GraphReq, GraphResp)) engineGraphChannels <- replicateM(mkCreditChannel(16));
+    
     Vector#(`NUM_ENGINES, FIFOF#(BC_MC_REQ)) engineOutQs <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, FIFOF#(BC_MC_RSP)) engineInQs  <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, Reg#(Bit#(64))) engineResults <- replicateM(mkRegU);
     
-    Worklist worklist <- mkWorklistFIFO();
+    Worklist worklist <- mkWorklistFIFO(reset_by worklistRst.new_rst);
     Vector#(16, FIFOF#(BC_MC_REQ)) worklistOutQs <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) worklistInQs  <- replicateM(mkFIFOF);
     
-    GraphEngine graph <- mkGraphEngine();
+    GraphEngine graph <- mkGraphEngine(reset_by graphRst.new_rst);
     Vector#(16, FIFOF#(BC_MC_REQ)) graphOutQs <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) graphInQs  <- replicateM(mkFIFOF);
+    
     
     for(Integer i = 0; i < 16; i = i + 1) begin
 
@@ -94,13 +111,17 @@ module mkSSSP(BC_HW2_IFC);
         mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
         mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
         
-        mkConnection(engines[i].graphReq, graph.req[i]);
-        mkConnection(graph.resp[i], engines[i].graphResp);
+        mkConnection(engines[i].graphReq, engineGraphChannels[i].reqToChan);
+        mkConnection(engineGraphChannels[i].reqFromChan, graph.req[i]);
+        mkConnection(graph.resp[i], engineGraphChannels[i].respToChan);
+        mkConnection(engineGraphChannels[i].respFromChan, engines[i].graphResp);
+        //mkConnection(engines[i].graphReq, graph.req[i]);
+        //mkConnection(graph.resp[i], engines[i].graphResp);
         
         mkConnection(graph.memReq[i], toPut(graphOutQs[i]));
         mkConnection(toGet(graphInQs[i]), graph.memResp[i]);
         
-        rule toMem(engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty || ssspOutQs[i].notEmpty);
+        rule toMem(doneResetting && (engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty || ssspOutQs[i].notEmpty));
             if(graphOutQs[i].notEmpty) begin
                 BC_MC_REQ req = graphOutQs[i].first();
                 graphOutQs[i].deq();
@@ -128,7 +149,7 @@ module mkSSSP(BC_HW2_IFC);
         endrule
         
         // rtnctl: 0 means it's for mkSSSP
-        rule fromMem;
+        rule fromMem(doneResetting);
             BC_MC_RSP resp = memRespQ[i].first();
             memRespQ[i].deq();
             
@@ -207,6 +228,22 @@ module mkSSSP(BC_HW2_IFC);
     // Initialization FSM. Sets up environment variables and starts the engines
     let fsm <- mkFSM(
        seq
+           // Handle all the resets!
+           action
+               for(Integer i = 0; i < 16; i=i+1) action
+                   engineRsts[i].assertReset();
+               endaction
+               graphRst.assertReset();
+               worklistRst.assertReset();
+           endaction
+           action
+               noAction;
+           endaction
+           
+           action
+               doneResetting <= True;
+           endaction
+       
 	       // Send read requests for the parameters for this FPGA (in parallel)
 	       action
                $display("%0d: mkSSSP[%0d]: FSM sending...", cur_cycle, fpgaId);
@@ -277,7 +314,12 @@ module mkSSSP(BC_HW2_IFC);
            action
                graph.init(fpgaId, paramNodePtr, paramEdgePtr);
            endaction
-           
+       
+           action
+               for(Integer i = 0; i < `NUM_ENGINES; i=i+1) action
+                   engineGraphChannels[i].init();
+               endaction
+           endaction
            action
                // Start the N engines
 	           for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) action
@@ -334,6 +376,7 @@ module mkSSSP(BC_HW2_IFC);
         fpgaId <= fpga_id;
         paramPtr <= truncate(param_block_addr) + (extend (fpga_id) << 3);
         engineDoneIdx <= 0;
+        doneResetting <= False;
         fsm.start;
     endmethod
     
