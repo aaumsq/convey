@@ -21,6 +21,7 @@ import BC_Transactors     :: *;
 
 //import CoalescingCounter::*;
 import WLEngine::*;
+import BufBRAMFIFOF::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
@@ -39,7 +40,15 @@ endinterface
 (* synthesize *)
 module mkWorklistFIFO(Worklist);
     
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineQ <- replicateM(mkSizedBRAMFIFOF(1024));
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) enqQs <- replicateM(mkFIFOF);
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) deqQs <- replicateM(mkFIFOF);
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) stealQs <- replicateM(mkFIFOF);
+    Vector#(`WL_ENGINE_PORTS, Reg#(Bool)) reqSteals <- replicateM(mkReg(False));
+    
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineQs <- replicateM(mkSizedBufBRAMFIFOF(1024));
+    
+    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) noEnqs <- mkReg(replicate(False));
+    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) engineEmpties <- mkReg(replicate(False));
     Reg#(Bool) done <- mkRegU;
     
     WLEngine engine <- mkWLEngine();
@@ -48,10 +57,11 @@ module mkWorklistFIFO(Worklist);
 
     rule calcDone;
         function Bool enqF(Integer x) = !enqValid[x];
-        function Bool engineF(Integer x) = !engineQ[x].notEmpty;
+        function Bool engineF(Integer x) = !engineQs[x].notEmpty;
         function Bool isTrue(Bool x) = x;
-        Vector#(`WL_ENGINE_PORTS, Bool) noEnqs = genWith(enqF);
-        Vector#(`WL_ENGINE_PORTS, Bool) engineEmpties = genWith(engineF);
+        noEnqs <= genWith(enqF);
+        engineEmpties <= genWith(engineF);
+        
         done <= all(isTrue, noEnqs) && all(isTrue, engineEmpties);
         //$display("noEnqs: %b, engineEmpties: %b", noEnqs, engineEmpties);
     endrule
@@ -60,47 +70,47 @@ module mkWorklistFIFO(Worklist);
         
         rule processFill;
             let pkt <- engine.streamOut[i].get;
-            engineQ[i].enq(pkt);
+            engineQs[i].enq(pkt);
             $display("WorklistFIFO filling ",fshow(pkt));
         endrule
+    
+        rule processEnq;
+            WLEntry pkt = enqQs[i].first;
+            enqQs[i].deq();
+            enqValid[i] <= True;
+            
+            Integer stealIdx = ?;
+            if(i == `WL_ENGINE_PORTS-1)
+                stealIdx = 0;
+            else
+                stealIdx = i + 1;
+            
+            if(reqSteals[stealIdx])
+                stealQs[stealIdx].enq(pkt);
+            else if(engineQs[i].notFull)
+                engineQs[i].enq(pkt);
+            else
+                engine.streamIn[i].put(pkt);
+        endrule
+        
+        rule processDeq;
+            if(engineQs[i].notEmpty) begin
+                let pkt = engineQs[i].first();
+                engineQs[i].deq();
+                deqQs[i].enq(pkt);
+                reqSteals[i] <= False;
+            end
+            else if(stealQs[i].notEmpty) begin
+                let pkt = stealQs[i].first();
+                stealQs[i].deq();
+                deqQs[i].enq(pkt);
+                reqSteals[i] <= False;
+            end
+            else begin
+                reqSteals[i] <= True;
+            end
+        endrule
     end
-
-    function Put#(WLEntry) mkEnqF(Integer i);
-        return interface Put#(WLEntry);
-            method Action put(WLEntry pkt);
-                enqValid[i] <= True;
-                if(engineQ[i].notFull)
-                    engineQ[i].enq(pkt);
-                else
-                    engine.streamIn[i].put(pkt);
-            endmethod
-        endinterface;
-    endfunction
-
-    function Get#(WLEntry) mkDeqF(Integer i);
-        return interface Get#(WLEntry);
-            method ActionValue#(WLEntry) get();
-                if(engineQ[i].notEmpty) begin
-                    let pkt = engineQ[i].first();
-                    engineQ[i].deq();
-                    return pkt;
-                end
-                else begin
-                    Integer stealIdx = ?;
-                    if(i == 0) begin
-                        let pkt = engineQ[`WL_ENGINE_PORTS-1].first();
-                        engineQ[`WL_ENGINE_PORTS-1].deq();
-                        return pkt;
-                    end
-                    else begin    
-                        let pkt = engineQ[i-1].first();
-                        engineQ[i-1].deq();
-                        return pkt;
-                    end 
-                end
-            endmethod
-        endinterface;
-    endfunction
     
     method Action init(BC_AEId fpgaid, BC_Addr lockloc, BC_Addr headptrloc, BC_Addr tailptrloc, BC_Addr maxsize, BC_Addr bufferloc);
         $display("%0d: mkWorklistFIFO[%0d]: INIT", cur_cycle, fpgaid);
@@ -112,8 +122,8 @@ module mkWorklistFIFO(Worklist);
         return done;
     endmethod
     
-    interface enq = genWith(mkEnqF);
-    interface deq = genWith(mkDeqF);
+    interface enq = map(toPut, enqQs);
+    interface deq = map(toGet, deqQs);
     interface memReq = map(toGet, engine.memReq);
     interface memResp = map(toPut, engine.memResp);
 endmodule
