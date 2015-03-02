@@ -34,24 +34,24 @@ interface Engine;
 endinterface
 
 (* synthesize, descending_urgency = "casDone, cas, recvDestNode, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
-module mkSSSPEngine(Engine);
+module mkSSSPEngine(Engine ifc);
     Reg#(BC_AEId) fpgaId <-mkRegU;
     Reg#(Bool) started <- mkReg(False);
-    Reg#(Bool) done <- mkReg(False);
+    Reg#(Bool) done <- mkRegU;
     
     FIFOF#(WLEntry) workInQ <- mkFIFOF;
     FIFOF#(WLEntry) workOutQ <- mkFIFOF;
     
-    FIFOF#(GraphReq) graphReqQ <- mkSizedFIFOF(16);
+    FIFOF#(GraphReq) graphReqQ <- mkSizedFIFOF(2);
     FIFOF#(GraphResp) graphRespQ <- mkSizedFIFOF(2);
-    Vector#(4, FIFOF#(GraphResp)) graphRespQs <- replicateM(mkSizedFIFOF(16));
+    Vector#(4, FIFOF#(GraphResp)) graphRespQs <- replicateM(mkSizedFIFOF(2));
     
     FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(2);
-    FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(16);  // # entries = # edgeReq in flight
+    FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(2);  // # entries = # edgeReq in flight
     
     FIFOF#(NodePayload) newDistQ <- mkSizedFIFOF(2);
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ1 <- mkSizedFIFOF(2);
-    FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ2 <- mkSizedFIFOF(16); // # entries = # CAS requests in flight
+    FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ2 <- mkSizedFIFOF(2); // # entries = # CAS requests in flight
     
     Reg#(Bit#(48)) numWorkFetched <- mkRegU;
     Reg#(Bit#(48)) numWorkRetired <- mkRegU;
