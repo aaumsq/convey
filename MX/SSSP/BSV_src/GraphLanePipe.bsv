@@ -42,8 +42,8 @@ typedef struct {
 } ReadNodePipe deriving(Bits, Eq);
 
 
-(* descending_urgency = "cas2, cas, readEdge2, readEdge, readNode3, readNode2, readNode" *)
 (* synthesize *)
+(* descending_urgency = "cas2, cas, readEdge2, readEdge, readNode3, readNode2, readNode" *)
 module mkGraphLanePipe(GraphLane);
     Reg#(BC_AEId) fpgaId <- mkRegU;
     Reg#(BC_Addr) nodePtr <- mkRegU;
@@ -71,7 +71,7 @@ module mkGraphLanePipe(GraphLane);
     FIFOF#(CASPipe) casQ <- mkFIFOF;
     FIFOF#(CASPipe) casQ2 <- mkSizedFIFOF(16);
     
-    rule cas1;
+    rule cas;
         CASPipe cxt = casQ.first();
         casQ.deq();
         
