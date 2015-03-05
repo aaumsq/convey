@@ -23,7 +23,6 @@ import Clocks::*;
 import SSSPEngine::*;
 import WorklistFIFO::*;
 import GraphEngine::*;
-import CreditChannel::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
@@ -88,7 +87,6 @@ module mkSSSP(BC_HW2_IFC);
     for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
         engines[i] <- mkSSSPEngine(reset_by engineRsts[i].new_rst);
     end
-    Vector#(`NUM_ENGINES, Channel#(GraphReq, GraphResp)) engineGraphChannels <- replicateM(mkCreditChannel(16));
     
     Vector#(`NUM_ENGINES, FIFOF#(BC_MC_REQ)) engineOutQs <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, FIFOF#(BC_MC_RSP)) engineInQs  <- replicateM(mkFIFOF);
@@ -111,12 +109,12 @@ module mkSSSP(BC_HW2_IFC);
         mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
         mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
         
-        mkConnection(engines[i].graphReq, engineGraphChannels[i].reqToChan);
-        mkConnection(engineGraphChannels[i].reqFromChan, graph.req[i]);
-        mkConnection(graph.resp[i], engineGraphChannels[i].respToChan);
-        mkConnection(engineGraphChannels[i].respFromChan, engines[i].graphResp);
-        //mkConnection(engines[i].graphReq, graph.req[i]);
-        //mkConnection(graph.resp[i], engines[i].graphResp);
+        //mkConnection(engines[i].graphReq, engineGraphChannels[i].reqToChan);
+        //mkConnection(engineGraphChannels[i].reqFromChan, graph.req[i]);
+        //mkConnection(graph.resp[i], engineGraphChannels[i].respToChan);
+        //mkConnection(engineGraphChannels[i].respFromChan, engines[i].graphResp);
+        mkConnection(engines[i].graphReq, graph.req[i]);
+        mkConnection(graph.resp[i], engines[i].graphResp);
         
         mkConnection(graph.memReq[i], toPut(graphOutQs[i]));
         mkConnection(toGet(graphInQs[i]), graph.memResp[i]);
@@ -144,7 +142,7 @@ module mkSSSP(BC_HW2_IFC);
                 BC_MC_REQ req = ssspOutQs[i].first();
                 ssspOutQs[i].deq();
                 memReqQ[i].enq(req);
-                $display("toMem SSSP routing to mem %0d ", i, fshow(req));
+                //$display("toMem SSSP routing to mem %0d ", i, fshow(req));
             end 
         endrule
         
@@ -154,7 +152,7 @@ module mkSSSP(BC_HW2_IFC);
             memRespQ[i].deq();
             
             GaloisAddress gaddr = unpack(resp.rtnctl);
-            $display("Received packed gaddr %d", gaddr);
+            //$display("Received packed gaddr %d", gaddr);
             if(gaddr.mod == MK_ENGINE) begin
                 //$display("fromMem packet routing to Engine %0d", i);
                 engineInQs[i].enq(resp);
@@ -314,23 +312,24 @@ module mkSSSP(BC_HW2_IFC);
            action
                graph.init(fpgaId, paramNodePtr, paramEdgePtr);
            endaction
-       
+           /*
            action
                for(Integer i = 0; i < `NUM_ENGINES; i=i+1) action
-                   engineGraphChannels[i].init();
+                   engineGraphChannels[i].init(fromInteger(i));
                endaction
            endaction
+            */
            action
                // Start the N engines
 	           for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) action
-	               engines[i].init(fpgaId);
+	               engines[i].init(fpgaId, fromInteger(i));
 	           endaction
            endaction
            // Wait for completion
            allDone <= False;
            numAllDones <= 0;
            while(numAllDones < 10) seq
-               $display("%0d: SSSP[%0d]: Checking allDones %0d...", cur_cycle, fpgaId, numAllDones);
+               //$display("%0d: SSSP[%0d]: Checking allDones %0d...", cur_cycle, fpgaId, numAllDones);
                allDone <= True;
                action
                    if(!worklist.isDone) begin
@@ -340,7 +339,7 @@ module mkSSSP(BC_HW2_IFC);
 	           for (engineDoneIdx <= 0; engineDoneIdx < fromInteger(`NUM_ENGINES); engineDoneIdx <= engineDoneIdx + 1) action
                    if(!engines[engineDoneIdx].isDone) begin
                      allDone <= False;
-                     $display("%0d: SSSP[%0d]: Engine %0d not done!", cur_cycle, fpgaId, engineDoneIdx);
+                     //$display("%0d: SSSP[%0d]: Engine %0d not done!", cur_cycle, fpgaId, engineDoneIdx);
                    end
 	           endaction
                if(allDone)

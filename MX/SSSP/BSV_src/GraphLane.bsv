@@ -27,12 +27,13 @@ interface GraphLane;
     interface Get#(BC_MC_REQ) memReq;
     interface Put#(BC_MC_RSP) memResp;
 
-    method Action init(BC_AEId fpgaId, BC_Addr nodePtr, BC_Addr edgePtr);
+    method Action init(BC_AEId fpgaId, Bit#(4) laneId, BC_Addr nodePtr, BC_Addr edgePtr);
 endinterface
 
 (* synthesize *)
 module mkGraphLane(GraphLane);
     Reg#(BC_AEId) fpgaId <- mkRegU;
+    Reg#(Bit#(4)) laneId <- mkRegU;
     Reg#(BC_Addr) nodePtr <- mkRegU;
     Reg#(BC_Addr) edgePtr <- mkRegU;
     
@@ -151,9 +152,10 @@ module mkGraphLane(GraphLane);
     FSM readNodeFSM <- mkFSM(readNodeStmt); 
    
     
-    method Action init(BC_AEId fpgaid, BC_Addr nodeptr, BC_Addr edgeptr);
-        $display("%0d: ~~~~ mkGraphEngine[%0d]: init nodePtr = %0x, edgePtr = %0x", cur_cycle, fpgaid, nodeptr, edgeptr);
+    method Action init(BC_AEId fpgaid, Bit#(4) laneid, BC_Addr nodeptr, BC_Addr edgeptr);
+        $display("%0d: ~~~~ mkGraphEngine[%0d][%0d]: init nodePtr = %0x, edgePtr = %0x", cur_cycle, fpgaid, laneid, nodeptr, edgeptr);
         fpgaId <= fpgaid;
+        laneId <= laneid;
         nodePtr <= nodeptr;
         edgePtr <= edgeptr;
         

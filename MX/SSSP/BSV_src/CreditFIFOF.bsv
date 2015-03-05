@@ -1,5 +1,5 @@
 
-package CreditChannel;
+package CreditFIFOF;
 
 import Vector           :: *;
 import FIFOF            :: *;
@@ -22,15 +22,13 @@ import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
 
-interface CreditChannel#(type req_t, type resp_t);
-    interface Put#(req_t) reqToChan;
-    interface Get#(req_t) reqFromChan;
-    interface Get#(resp_t) respFromChan;
-    interface Put#(resp_t) respToChan;
-    method Action init(Bit#(4) laneId, Bit#(4) chanId);
+interface CreditFIFOF#(type req_t, type resp_t);
+    interface FIFOF#(req_t) req;
+    interface FIFOF#(resp_t) resp;
+    method Action init(BC_AEId fpgaId, Bit#(4) laneId, Bit#(4) chanId);
 endinterface
 
-module mkCreditChannel#(Integer count) (CreditChannel#(req_t, resp_t))
+module mkCreditFIFOF#(Integer count) (CreditFIFOF#(req_t, resp_t))
     provisos (Bits#(req_t, req_size), Bits#(resp_t, resp_size));
     Reg#(Bit#(10)) credits <- mkRegU;
     Reg#(Bool) started <- mkReg(False);
@@ -53,8 +51,8 @@ module mkCreditChannel#(Integer count) (CreditChannel#(req_t, resp_t))
         end
     endrule
     
-    rule resp(respQ.notEmpty);
-        $display("CreditChannel[%0d][%0d][%0d] respQ not empty", fpgaId, laneId, chanId);
+    rule respDisp(respQ.notEmpty);
+        $display("CreditFIFOF[%0d][%0d][%0d] respQ not empty", fpgaId, laneId, chanId);
     endrule
     
     method Action init(BC_AEId fpgaid, Bit#(4) laneid, Bit#(4) chanid);
@@ -65,36 +63,45 @@ module mkCreditChannel#(Integer count) (CreditChannel#(req_t, resp_t))
         started <= True;
     endmethod
     
-    interface Put reqToChan;
-        method Action put(pkt) if(started && (credits > 0));
+    interface FIFOF req;
+        method Action enq(pkt) if(started && (credits > 0));
             reqQ.enq(pkt);
             dec.send();
-            $display("CreditChannel[%0d][%0d][%0d] enq succeeded, credits left: %0d/%0d", fpgaId, laneId, chanId, credits, count);
+            $display("CreditFIFOF[%0d][%0d][%0d] enq succeeded, credits left: %0d/%0d", fpgaId, laneId, chanId, credits, count);
         endmethod
-    endinterface
-    
-    interface Get reqFromChan;
-        method ActionValue#(req_t) get();
+        method Action deq() if(started);
             reqQ.deq();
-            $display("CreditChannel[%0d][%0d][%0d] req leaving reqQ", fpgaId, laneId, chanId);
+        endmethod
+        method req_t first();
             return reqQ.first();
         endmethod
+        method Action clear() if(started);
+            reqQ.clear();
+        endmethod
+        method Bool notFull();
+            return reqQ.notFull();
+        endmethod
+        method Bool notEmpty();
+            return reqQ.notEmpty();
+        endmethod
     endinterface
     
-    interface Put respToChan;
-        method Action put(pkt) if(started);
+    interface FIFOF resp;
+        method Action enq(pkt) if(started);
             respQ.enq(pkt);
         endmethod
-    endinterface
-    
-    interface Get respFromChan;
-        method ActionValue#(resp_t) get();
-            $display("CreditChannel resp");
+        method Action deq() if(started);
             respQ.deq();
             inc.send();
-            return respQ.first();
         endmethod
+        method resp_t first() = respQ.first();
+        method Action clear() if(started);
+            respQ.clear();
+        endmethod
+        method Bool notFull() = respQ.notFull();
+        method Bool notEmpty() = respQ.notEmpty();
     endinterface
+        
 endmodule
 
 endpackage

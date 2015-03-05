@@ -71,7 +71,7 @@ module mkWorklistFIFO(Worklist);
         rule processFill;
             let pkt <- engine.streamOut[i].get;
             engineQs[i].enq(pkt);
-            $display("WorklistFIFO filling ",fshow(pkt));
+            //$display("WorklistFIFO filling ",fshow(pkt));
         endrule
     
         rule processEnq;
@@ -93,16 +93,18 @@ module mkWorklistFIFO(Worklist);
                 engine.streamIn[i].put(pkt);
         endrule
         
-        rule processDeq;
+        rule processDeq(deqQs[i].notFull);
             if(engineQs[i].notEmpty) begin
                 let pkt = engineQs[i].first();
                 engineQs[i].deq();
+                $display("Lane %0d deq from engineQ", i);
                 deqQs[i].enq(pkt);
                 reqSteals[i] <= False;
             end
             else if(stealQs[i].notEmpty) begin
                 let pkt = stealQs[i].first();
                 stealQs[i].deq();
+                $display("Lane %0d deq from stealQ", i);
                 deqQs[i].enq(pkt);
                 reqSteals[i] <= False;
             end
