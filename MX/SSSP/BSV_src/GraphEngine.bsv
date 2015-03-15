@@ -41,6 +41,9 @@ module mkGraphEngine(GraphEngine);
     Vector#(16, Reg#(BC_AEId)) fpgaId_staging <- replicateM(mkRegU);
     Vector#(16, Reg#(BC_Addr)) nodePtr_staging <- replicateM(mkRegU);
     Vector#(16, Reg#(BC_Addr)) edgePtr_staging <- replicateM(mkRegU);
+    Vector#(16, Reg#(BC_AEId)) fpgaId_staging2 <- replicateM(mkRegU);
+    Vector#(16, Reg#(BC_Addr)) nodePtr_staging2 <- replicateM(mkRegU);
+    Vector#(16, Reg#(BC_Addr)) edgePtr_staging2 <- replicateM(mkRegU);
 
     Vector#(`GRAPH_PORTS, FIFOF#(GraphResp)) respQ <- replicateM(mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT));
 
@@ -69,7 +72,16 @@ module mkGraphEngine(GraphEngine);
            action
                for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
                    action
-                     pipes[i].init(fpgaId_staging[i], nodePtr_staging[i], edgePtr_staging[i]);
+                     fpgaId_staging2[i] <= fpgaId_staging[i];
+                     nodePtr_staging2[i] <= nodePtr_staging[i];
+                     edgePtr_staging2[i] <= edgePtr_staging[i];
+                   endaction
+               endaction
+           endaction
+           action
+               for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
+                   action
+                     pipes[i].init(fpgaId_staging2[i], fromInteger(i), nodePtr_staging2[i], edgePtr_staging2[i]);
                    endaction
                endaction
            endaction
