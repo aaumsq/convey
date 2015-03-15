@@ -47,7 +47,7 @@ export MC_READ_ORDER = 1
 export AE_AE_IF = 0
 
 # The PDK synchronous interface is at 150 MHz
-export CLK_PERS_FREQ = 150
+export CLK_PERS_FREQ = 125
 
 # Uncomment this to build with Convey PDK's memory stats instrumentation
 # export PERFMON = 1
