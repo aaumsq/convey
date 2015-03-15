@@ -52,7 +52,7 @@ module mkCreditFIFOF#(Integer count) (CreditFIFOF#(req_t, resp_t))
     endrule
     
     rule respDisp(respQ.notEmpty);
-        $display("CreditFIFOF[%0d][%0d][%0d] respQ not empty", fpgaId, laneId, chanId);
+        if(`DEBUG) $display("CreditFIFOF[%0d][%0d][%0d] respQ not empty", fpgaId, laneId, chanId);
     endrule
     
     method Action init(BC_AEId fpgaid, Bit#(4) laneid, Bit#(4) chanid);
@@ -67,7 +67,7 @@ module mkCreditFIFOF#(Integer count) (CreditFIFOF#(req_t, resp_t))
         method Action enq(pkt) if(started && (credits > 0));
             reqQ.enq(pkt);
             dec.send();
-            $display("CreditFIFOF[%0d][%0d][%0d] enq succeeded, credits left: %0d/%0d", fpgaId, laneId, chanId, credits, count);
+            if(`DEBUG) $display("CreditFIFOF[%0d][%0d][%0d] enq succeeded, credits left: %0d/%0d", fpgaId, laneId, chanId, credits, count);
         endmethod
         method Action deq() if(started);
             reqQ.deq();

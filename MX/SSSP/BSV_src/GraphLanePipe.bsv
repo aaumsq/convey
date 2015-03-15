@@ -63,7 +63,7 @@ module mkGraphLanePipe(GraphLane);
         memRespQ.deq;
         GaloisAddress gaddr = unpack(rsp.rtnctl);
         memRespQs[gaddr.addr].enq(rsp);
-        $display("%d: GraphEngine[%0d][%0d] redirecting memResp to channel %0d", cur_cycle, fpgaId, laneId, gaddr.addr);
+        if(`DEBUG)$display("%d: GraphEngine[%0d][%0d] redirecting memResp to channel %0d", cur_cycle, fpgaId, laneId, gaddr.addr);
     endrule
     
     
@@ -84,8 +84,7 @@ module mkGraphLanePipe(GraphLane);
         // Payload is the 3rd 32-bit (4B) entry in struct
         Bit#(48) vaddr = vaddrBase + (2 * 4);
         
-        //$display("~~~ GraphEngine CAS FSM start! enq mem req @ vaddr: %0x, cas_idx: %0d, cmpVal: %0d, swapVal: %0d", vaddr, cas_idx, cas_cmpVal, cas_swapVal);
-        //$display("~~~  nodePtr: %0x, vaddrBase: %0x, nodeID: %0x, vaddr: %0x", nodePtr, vaddrBase, cas_nodeID, vaddr);
+        if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] CAS FSM start! enq mem req @ vaddr: %0x, cas_idx: %0d, cmpVal: %0d, swapVal: %0d", cur_cycle, fpgaId, laneId, vaddr, cxt.nodeID, cxt.cmpVal, cxt.swapVal);
         memReqQ.enq(BC_MC_REQ{ cmd_sub: REQ_ATOM_CAS, rtnctl: gaddr, len: BC_4B, vadr: vaddr, data: {cxt.cmpVal, cxt.swapVal}});
     endrule
     
@@ -100,7 +99,7 @@ module mkGraphLanePipe(GraphLane);
         Bit#(32) curData = truncate(rsp.data);
         Bool success = (curData == pack(cxt.cmpVal));
         GraphResp resp = tagged CAS{success: success, oldVal: curData, channel: cxt.channel};
-        //$display("~~~ GraphEngine CAS complete, success: %d, oldVal: %0d, channel: %d", success, curData, cas_channel);
+        if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] CAS complete, success: %d, oldVal: %0d, channel: %d", cur_cycle, fpgaId, laneId, success, curData, cxt.channel);
         respQ.enq(resp);
     endrule
     
@@ -114,7 +113,7 @@ module mkGraphLanePipe(GraphLane);
         readEdgeQ.deq();
         
         readEdgeQ2.enq(cxt);
-        $display("%0d: GraphEngine[%0d][%0d] readEdge1 edgeId=%0d channel=%0d", cur_cycle, fpgaId, laneId, cxt.edgeID, cxt.channel); 
+        if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] readEdge1 edgeId=%0d channel=%0d", cur_cycle, fpgaId, laneId, cxt.edgeID, cxt.channel); 
        
         Bit#(32) gaddr = pack(GaloisAddress{mod: MK_GRAPH, addr: 1});
         Bit#(48) vaddr = edgePtr + (extend(cxt.edgeID) << `LG_GRAPH_EDGE_SIZE);
@@ -128,11 +127,10 @@ module mkGraphLanePipe(GraphLane);
         BC_MC_RSP rsp = memRespQs[1].first();
         memRespQs[1].deq();
         GraphEdge gedge = unpack(rsp.data);
-        $display("%0d: GraphEngine[%0d][%0d] readEdge2 done! edgeDest=%0d, edgeWeight=%0d, channel=%0d", cur_cycle, fpgaId, laneId, gedge.dest, gedge.weight, cxt.channel);
+        if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] readEdge2 done! edgeDest=%0d, edgeWeight=%0d, channel=%0d", cur_cycle, fpgaId, laneId, gedge.dest, gedge.weight, cxt.channel);
 
         GraphResp resp = tagged Edge{gedge: gedge, channel: cxt.channel};
         respQ.enq(resp);
-        //$display("Edge read finished: %x, channel: %x", gedge, readEdge_channel);
     endrule
     
 
@@ -164,7 +162,7 @@ module mkGraphLanePipe(GraphLane);
         readNodeQ3_partialNode.enq(rsp.data);
         
         Tuple2#(Bit#(32), Bit#(32)) tmp = unpack(rsp.data);
-        $display("%0d: GraphEngine[%0d][%0d] receive readNode resp #1, data = %0x (%0d %0d)", cur_cycle, fpgaId, laneId, rsp.data);
+        if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] receive readNode resp #1, data = %0x (%0d %0d)", cur_cycle, fpgaId, laneId, rsp.data);
         Bit#(32) gaddr = pack(GaloisAddress{mod: MK_GRAPH, addr: 3});
         Bit#(48) vaddr = nodePtr + (extend(cxt.nodeID) << `LG_GRAPH_NODE_SIZE) + 8;
         memReqQ.enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: vaddr, data: ?});    
@@ -181,13 +179,13 @@ module mkGraphLanePipe(GraphLane);
         memRespQs[3].deq();
         GraphNode node = unpack({rsp.data, partialNode});
         
-        $display("%0d: GraphEngine[%0d][%0d] receive readNode resp #2 packed node: %x", cur_cycle, fpgaId, laneId, node);
+        if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] receive readNode resp #2 packed node: %x", cur_cycle, fpgaId, laneId, node);
         GraphResp ret = tagged Node{node: node, channel: cxt.channel};
         respQ.enq(ret);    
     endrule
     
     method Action init(BC_AEId fpgaid, Bit#(4) laneid, BC_Addr nodeptr, BC_Addr edgeptr);
-        $display("%0d: ~~~~ mkGraphEngine[%0d][%0d]: init nodePtr = %0x, edgePtr = %0x", cur_cycle, fpgaid, laneid, nodeptr, edgeptr);
+        $display("%0d: mkGraphEngine[%0d][%0d]: init nodePtr = %0x, edgePtr = %0x", cur_cycle, fpgaid, laneid, nodeptr, edgeptr);
         fpgaId <= fpgaid;
         laneId <= laneid;
         nodePtr <= nodeptr;
@@ -198,17 +196,16 @@ module mkGraphLanePipe(GraphLane);
     
     interface Put req;
         method Action put(GraphReq pkt);
-            //$display(" ~~~ GraphEngine put request");
             if(pkt matches tagged ReadNode .rd) begin
-                $display("%0d: GraphEngine[%0d][%0d] starting ReadNode op ID %0d, channel %0d", cur_cycle, fpgaId, laneId, rd.id, rd.channel);
+                if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] starting ReadNode op ID %0d, channel %0d", cur_cycle, fpgaId, laneId, rd.id, rd.channel);
                 readNodeQ.enq(ReadNodePipe{nodeID: rd.id, channel: rd.channel});
             end
             else if(pkt matches tagged ReadEdge .re) begin
-                $display("%0d: GraphEngine[%0d][%0d] starting ReadEdge op edgeID %0d, channel %0d", cur_cycle, fpgaId, laneId, re.edgeID, re.channel);
+                if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] starting ReadEdge op edgeID %0d, channel %0d", cur_cycle, fpgaId, laneId, re.edgeID, re.channel);
                 readEdgeQ.enq(ReadEdgePipe{edgeID: re.edgeID, channel: re.channel});
             end
             else if(pkt matches tagged CAS .cas) begin
-                $display("%0d: GraphEngine[%0d][%0d] starting CAS node ID %0d channel %0d", cur_cycle, fpgaId, laneId, cas.id, cas.channel);
+                if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] starting CAS node ID %0d channel %0d", cur_cycle, fpgaId, laneId, cas.id, cas.channel);
                 casQ.enq(CASPipe{nodeID: cas.id, cmpVal: cas.cmpVal, swapVal: cas.swapVal, channel: cas.channel});
             end
         endmethod

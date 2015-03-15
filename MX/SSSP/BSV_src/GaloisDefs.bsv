@@ -11,4 +11,5 @@
 `define LG_GRAPH_NODE_SIZE 4
 `define LG_GRAPH_EDGE_SIZE 3
 
+`define DEBUG False
 `endif
