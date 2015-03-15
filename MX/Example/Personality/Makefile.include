@@ -20,8 +20,8 @@ USER_VERILOG_DIRS += $(BCLIB)/BClib_verilog
 
 
 # PDK location and revision
-# export CNY_PDK = /opt/convey/pdk
-export CNY_PDK = /opt/convey/pdk_mx
+export CNY_PDK = /opt/convey/pdk
+#export CNY_PDK = /opt/convey/pdk_mx
 export CNY_PDK_REV = latest
 
 # Uncomment one of these for your particular Convey platform
