@@ -28,7 +28,9 @@ import GaloisTypes::*;
 
 `define NUM_ENGINES 16
 `define LG_NUM_ENGINES 4
-
+`define WATCHDOG_TIMEOUT 5000000000
+//`define WATCHDOG_TIMEOUT 50000000
+//`define WATCHDOG_TIMEOUT 100000
 
 interface BC_HW2_IFC;
    method Action start (BC_AEId fpga_id, BC_Data param_block_addr);
@@ -43,7 +45,7 @@ Integer param_edgePtr = 1;
 Integer param_jobsPtr = 2;
 Integer param_metaPtr = 3;
 Integer param_output = 4;
-Integer param_status = 5;
+Integer param_donePtr = 5;
 Integer param_sentinel = 6;
 
 Integer param_lock = 0;
@@ -55,18 +57,22 @@ Integer param_wlSize = 3;
 module mkSSSP(BC_HW2_IFC);
     Reg#(BC_AEId) fpgaId <- mkRegU;
     Reg#(BC_Addr) paramPtr <- mkRegU;
-    Reg#(BC_Addr) paramNodePtr <- mkRegU;
-    Reg#(BC_Addr) paramEdgePtr <- mkRegU;
-    Reg#(BC_Addr) paramJobsPtr <- mkRegU;
-    Reg#(BC_Addr) paramMetaPtr <- mkRegU;
-    Reg#(BC_Addr) paramOutputPtr  <- mkRegU;
-    Reg#(BC_Addr) paramStatus  <- mkRegU;
+    Reg#(BC_Addr) paramNodePtr  <- mkRegU;
+    Reg#(BC_Addr) paramEdgePtr  <- mkRegU;
+    Reg#(BC_Addr) paramJobsPtr  <- mkRegU;
+    Reg#(BC_Addr) paramMetaPtr  <- mkRegU;
+    Reg#(BC_Addr) paramOutputPtr<- mkRegU;
+    Reg#(BC_Addr) paramDonePtr  <- mkRegU;
     Reg#(BC_Addr) paramSentinel <- mkRegU;
     
     Reg#(Bit#(`NUM_ENGINES)) engineDoneIdx <- mkRegU; // need +1 for terminating condition
+    Reg#(Bool) done <- mkRegU;
+    Reg#(Bit#(4)) numDones <- mkRegU;
     Reg#(Bool) allDone <- mkRegU;
-    Reg#(Bit#(10)) numAllDones <- mkRegU;
+    Reg#(Bit#(4)) numAllDones <- mkRegU;
     Reg#(Bool) doneResetting <- mkReg(False);
+    Reg#(Bool) incremented <- mkRegU;
+    Reg#(Bit#(64)) watchdog <- mkRegU;
     
     Clock clk <- exposeCurrentClock;
     Reset rst <- exposeCurrentReset;
@@ -100,6 +106,9 @@ module mkSSSP(BC_HW2_IFC);
     Vector#(16, FIFOF#(BC_MC_REQ)) graphOutQs <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(BC_MC_RSP)) graphInQs  <- replicateM(mkFIFOF);
     
+    rule watchdogInc;
+        watchdog <= watchdog + 1;
+    endrule
     
     for(Integer i = 0; i < 16; i = i + 1) begin
 
@@ -250,7 +259,7 @@ module mkSSSP(BC_HW2_IFC);
 	           send_rd_req (paramPtr, param_jobsPtr);
 	           send_rd_req (paramPtr, param_metaPtr);
 	           send_rd_req (paramPtr, param_output);
-	           send_rd_req (paramPtr, param_status);
+	           send_rd_req (paramPtr, param_donePtr);
 	           send_rd_req (paramPtr, param_sentinel);
 	       endaction
 
@@ -276,15 +285,15 @@ module mkSSSP(BC_HW2_IFC);
                paramOutputPtr <= outputPtr;
            endaction
            action
-	           let status    <- recv_rd_rsp(param_status);
-               paramStatus <= status;
+	           let donePtr   <- recv_rd_rsp(param_donePtr);
+               paramDonePtr <= donePtr;
            endaction
            action
 	           let sentinel  <- recv_rd_rsp(param_sentinel);
                paramSentinel <= sentinel;
            endaction
            action
-               $display ("%0d: mkSSSP [%0d]: params are %0h 0x%0h 0x%0h 0x%0h %0h %0h %0h", cur_cycle, fpgaId, paramNodePtr, paramEdgePtr, paramJobsPtr, paramMetaPtr, paramOutputPtr, paramStatus, paramSentinel);
+               $display ("%0d: mkSSSP [%0d]: params are %0h 0x%0h 0x%0h 0x%0h %0h %0h %0h", cur_cycle, fpgaId, paramNodePtr, paramEdgePtr, paramJobsPtr, paramMetaPtr, paramOutputPtr, paramDonePtr, paramSentinel);
            endaction
            
            // Read metadata
@@ -325,32 +334,111 @@ module mkSSSP(BC_HW2_IFC);
 	               engines[i].init(fpgaId, fromInteger(i));
 	           endaction
            endaction
+       
            // Wait for completion
-           allDone <= False;
-           numAllDones <= 0;
-           while(numAllDones < 10) seq
-               //$display("%0d: SSSP[%0d]: Checking allDones %0d...", cur_cycle, fpgaId, numAllDones);
-               allDone <= True;
+           action
+               allDone <= False;
+               numAllDones <= 1;
+               done <= False;
+           endaction
+           
+           while(numAllDones < 3 && watchdog < `WATCHDOG_TIMEOUT) seq
+               numDones <= 0;
+               //$display("mkSSSP[%0d]: Checking local dones..., numAllDones = %d", fpgaId, numAllDones);
+               while(numDones < 10 && watchdog < `WATCHDOG_TIMEOUT) seq
+                   //$display("%0d: SSSP[%0d]: Checking allDones %0d...", cur_cycle, fpgaId, numAllDones);
+                   done <= True;
+                   action
+                     if(!worklist.isDone) begin
+                         done <= False;
+                         //$display("mkSSSP[%0d]: WL not done!", fpgaId);
+                     end
+                   endaction
+	               for (engineDoneIdx <= 0; engineDoneIdx < fromInteger(`NUM_ENGINES); engineDoneIdx <= engineDoneIdx + 1) action
+                     if(!engines[engineDoneIdx].isDone) begin
+                         done <= False;
+                         //if(!done) $display("%0d: SSSP[%0d]: Engine %0d not done!", cur_cycle, fpgaId, engineDoneIdx);
+                     end
+	               endaction
+                   action
+                     if(done)
+                         numDones <= numDones + 1;
+                     else begin
+                         numDones <= 0;
+                         numAllDones <= 1;
+                         //$display("mkSSSP[%0d]: RESETTING ALL DONE", fpgaId);
+                     end
+                   endaction
+               endseq
+               
+               // Set Done
+               if(watchdog < `WATCHDOG_TIMEOUT) seq
                action
-                   if(!worklist.isDone) begin
-                     allDone <= False;
+                   //$display("mkSSSP[%0d]: Local is all done!, numAllDones = %d", fpgaId, numAllDones);
+                   BC_Addr addr = paramDonePtr + (extend(fpgaId) << 3);
+                   ssspOutQs[0].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: extend(numAllDones)});
+               endaction
+               
+               action
+                   ssspInQs[0].deq();
+               endaction
+               
+               // Check Dones from all FPGAs
+               action
+                   BC_Addr addr = paramDonePtr + fromInteger(0*8);
+                   ssspOutQs[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+                   addr = paramDonePtr + fromInteger(1*8);
+                   ssspOutQs[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+                   addr = paramDonePtr + fromInteger(2*8);
+                   ssspOutQs[2].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+                   addr = paramDonePtr + fromInteger(3*8);
+                   ssspOutQs[3].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+               endaction
+               
+               action
+	               let data0 <- recv_rd_rsp(0);
+	               let data1 <- recv_rd_rsp(1);
+	               let data2 <- recv_rd_rsp(2);
+	               let data3 <- recv_rd_rsp(3);
+                   Bit#(4) d0 = truncate(data0);
+                   Bit#(4) d1 = truncate(data1);
+                   Bit#(4) d2 = truncate(data2);
+                   Bit#(4) d3 = truncate(data3);
+       
+                   if((d0 >= numAllDones) && (d1 >= numAllDones) && (d2 >= numAllDones) && (d3 >= numAllDones)) begin
+                       numAllDones <= numAllDones + 1;
+                       incremented <= True;
+                       $display("mkSSSP[%0d]: All done! numAllDones = %0d", fpgaId, numAllDones);
+                   end
+                   else begin
+                       incremented <= False;
+                       //$display("mkSSSP[%0d]: All dones: %0d %0d %0d %0d, numAllDone: %0d", fpgaId, data0, data1, data2, data3, numAllDones);
                    end
                endaction
-	           for (engineDoneIdx <= 0; engineDoneIdx < fromInteger(`NUM_ENGINES); engineDoneIdx <= engineDoneIdx + 1) action
-                   if(!engines[engineDoneIdx].isDone) begin
-                     allDone <= False;
-                     //$display("%0d: SSSP[%0d]: Engine %0d not done!", cur_cycle, fpgaId, engineDoneIdx);
-                   end
-	           endaction
-               if(allDone)
-                   numAllDones <= numAllDones + 1;
+               /*
+               if(incremented) seq
+                   action
+                       BC_Addr addr = paramDonePtr + (extend(fpgaId) << 3);
+                       ssspOutQs[0].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: fromInteger(0)});
+                       $display("mkSSSP[%0d]: Not all done, writing 0!", fpgaId);
+                   endaction
+                   
+                   action
+                       ssspInQs[0].deq();
+                   endaction
+               endseq
+               */
+                   endseq
            endseq
-
+                              
            $display("%0d: SSSP[%0d]: All Done!", cur_cycle, fpgaId);
-           //let result <- engines[engineDoneIdx].result;
-	       //engineResults[engineDoneIdx] <= result;
-
-           
+           action
+               for(Integer i = 0; i < 16; i=i+1) action
+                   let result <- engines[i].result;
+	               engineResults[i] <= result;
+                   $display("Engine[%0d][%0d] edges fetched = %0d", fpgaId, i, result);
+               endaction
+           endaction
            
 	       // Write final (per-FPGA) sum back to param block, and drain the response
 	       send_wr_req (paramPtr, param_output, 64'hCAFEBABE_BEEFBEEF);
@@ -376,6 +464,7 @@ module mkSSSP(BC_HW2_IFC);
         paramPtr <= truncate(param_block_addr) + (extend (fpga_id) << 3);
         engineDoneIdx <= 0;
         doneResetting <= False;
+        watchdog <= 0;
         fsm.start;
     endmethod
     
