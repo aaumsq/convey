@@ -43,19 +43,20 @@ module mkWorklistFIFO(Worklist);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) enqQs <- replicateM(mkFIFOF);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) deqQs <- replicateM(mkFIFOF);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) stealQs <- replicateM(mkFIFOF);
-    Vector#(`WL_ENGINE_PORTS, Reg#(Bool)) reqSteals <- replicateM(mkReg(False));
+    Vector#(`WL_ENGINE_PORTS, Reg#(Bool)) reqSteals <- replicateM(mkRegU);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineQs <- replicateM(mkSizedBufBRAMFIFOF(1024));
     
-    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) noEnqs <- mkReg(replicate(False));
-    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) engineEmpties <- mkReg(replicate(False));
-    Reg#(Bool) done <- mkRegU;
+    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) noEnqs <- mkRegU;
+    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) engineEmpties <- mkRegU;
+    Reg#(Bool) done <- mkReg(False);
+    Reg#(Bool) started <- mkReg(False);
     
     WLEngine engine <- mkWLEngine();
     
     Vector#(`WL_ENGINE_PORTS, Wire#(Bool)) enqValid <- replicateM(mkDWire(False));
 
-    rule calcDone;
+    rule calcDone(started);
         function Bool enqF(Integer x) = !enqValid[x];
         function Bool engineF(Integer x) = !engineQs[x].notEmpty;
         function Bool isTrue(Bool x) = x;
@@ -63,18 +64,35 @@ module mkWorklistFIFO(Worklist);
         engineEmpties <= genWith(engineF);
         
         done <= all(isTrue, noEnqs) && all(isTrue, engineEmpties);
-        //$display("noEnqs: %b, engineEmpties: %b", noEnqs, engineEmpties);
+        //$display("WorklistFIFO: noEnqs: %b, engineEmpties: %b", noEnqs, engineEmpties);
+    endrule
+    
+    rule stealReqs(started);
+        function Bool isTrue(Bool x) = x;
+        function Bool stealsF(Integer x) = reqSteals[x];
+        function Bool engineF(Integer x) = engineQs[x].notEmpty;
+        Vector#(`WL_ENGINE_PORTS, Bool) steals = genWith(stealsF);
+        Vector#(`WL_ENGINE_PORTS, Bool) engines = genWith(engineF);
+        if(any(isTrue, steals)) begin
+            if(`DEBUG) $display("steals: %b, engineQs: %b", steals, engines);
+        end
     endrule
     
     for(Integer i = 0; i < `WL_ENGINE_PORTS; i = i + 1) begin
         
-        rule processFill;
+        rule engineFull(started);
+            if(!engineQs[i].notFull) begin
+                if(`DEBUG) $display("WorklistFIFO engineQ[%0d] is full!", i);
+                //$finish;
+            end
+        endrule
+        rule processFill(started);
             let pkt <- engine.streamOut[i].get;
             engineQs[i].enq(pkt);
-            //$display("WorklistFIFO filling ",fshow(pkt));
+            if(`DEBUG) $display("WorklistFIFO filling engineQ[%0d] ", i, fshow(pkt));
         endrule
     
-        rule processEnq;
+        rule processEnq(started);
             WLEntry pkt = enqQs[i].first;
             enqQs[i].deq();
             enqValid[i] <= True;
@@ -87,29 +105,31 @@ module mkWorklistFIFO(Worklist);
             
             if(reqSteals[stealIdx])
                 stealQs[stealIdx].enq(pkt);
-            else if(engineQs[i].notFull)
+            else if(engineQs[i].notFull) begin
+                if(`DEBUG) $display("WorklistFIFO enqing engineQ[%0d] ", i, fshow(pkt));
                 engineQs[i].enq(pkt);
+            end
             else
                 engine.streamIn[i].put(pkt);
         endrule
         
-        rule processDeq(deqQs[i].notFull);
+        rule processDeq(started && deqQs[i].notFull);
             if(engineQs[i].notEmpty) begin
                 let pkt = engineQs[i].first();
                 engineQs[i].deq();
-                $display("Lane %0d deq from engineQ", i);
+                if(`DEBUG) $display("Lane %0d deq from engineQ", i);
                 deqQs[i].enq(pkt);
                 reqSteals[i] <= False;
             end
             else if(stealQs[i].notEmpty) begin
                 let pkt = stealQs[i].first();
                 stealQs[i].deq();
-                $display("Lane %0d deq from stealQ", i);
+                if(`DEBUG) $display("Lane %0d deq from stealQ", i);
                 deqQs[i].enq(pkt);
                 reqSteals[i] <= False;
             end
             else begin
-                reqSteals[i] <= True;
+                //reqSteals[i] <= True;
             end
         endrule
     end
@@ -118,10 +138,15 @@ module mkWorklistFIFO(Worklist);
         $display("%0d: mkWorklistFIFO[%0d]: INIT", cur_cycle, fpgaid);
         engine.init(fpgaid, lockloc, headptrloc, tailptrloc, maxsize, bufferloc);
         done <= False;
+        started <= True;
+        
+        for(Integer i = 0; i < `WL_ENGINE_PORTS; i=i+1) begin
+            reqSteals[i] <= False;
+        end
     endmethod
     
     method Bool isDone;
-        return done;
+        return done && engine.isDone();
     endmethod
     
     interface enq = map(toPut, enqQs);
