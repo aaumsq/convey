@@ -68,12 +68,13 @@ typedef enum {
    MK_SSSP = 0,
    MK_ENGINE = 1,
    MK_WORKLIST = 2,
-   MK_GRAPH = 3
+   MK_GRAPH = 3,
+   IGNORE = 4
 } GaloisModule deriving(Bits, Eq);
 
 typedef struct {
    GaloisModule mod;
-   Bit#(30) addr;
+   Bit#(29) addr;
 } GaloisAddress deriving(Bits, Eq);
 
 endpackage
