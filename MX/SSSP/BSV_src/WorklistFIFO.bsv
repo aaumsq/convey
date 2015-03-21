@@ -29,8 +29,8 @@ interface Worklist;
     interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) enq;
     interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) deq;
     
-    interface Vector#(`WL_ENGINE_PORTS, Get#(BC_MC_REQ)) memReq;
-    interface Vector#(`WL_ENGINE_PORTS, Put#(BC_MC_RSP)) memResp;
+    interface Vector#(`WL_ENGINE_PORTS, Get#(MemReq)) memReq;
+    interface Vector#(`WL_ENGINE_PORTS, Put#(MemResp)) memResp;
     
     method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
     method Bool isDone();

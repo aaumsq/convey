@@ -21,9 +21,6 @@ import BC_Transactors     :: *;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
-import GraphLane::*;
-
-
 typedef struct {
    NodeID nodeID;
    NodePayload cmpVal;
@@ -41,6 +38,15 @@ typedef struct {
    Channel channel;
 } ReadNodePipe deriving(Bits, Eq);
 
+interface GraphLane;
+    interface Put#(GraphReq) req;
+    interface Get#(GraphResp) resp;
+    interface Get#(MemReq) memReq;
+    interface Put#(MemResp) memResp;
+
+    method Action init(BC_AEId fpgaId, Bit#(4) laneId, BC_Addr nodePtr, BC_Addr edgePtr);
+endinterface
+
 
 (* synthesize *)
 (* descending_urgency = "cas2, cas, readEdge2, readEdge, readNode3, readNode2, readNode" *)
@@ -54,16 +60,15 @@ module mkGraphLanePipe(GraphLane);
     
     FIFOF#(GraphResp) respQ <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
 
-    FIFOF#(BC_MC_REQ) memReqQ <- mkFIFOF;
-    FIFOF#(BC_MC_RSP) memRespQ <- mkFIFOF;
-    Vector#(4, FIFOF#(BC_MC_RSP)) memRespQs <- replicateM(mkFIFOF);
+    FIFOF#(MemReq) memReqQ <- mkFIFOF;
+    FIFOF#(MemResp) memRespQ <- mkFIFOF;
+    Vector#(4, FIFOF#(MemResp)) memRespQs <- replicateM(mkFIFOF);
     
     rule memResp_distribute;
-        BC_MC_RSP rsp = memRespQ.first;
-        memRespQ.deq;
-        GaloisAddress gaddr = unpack(rsp.rtnctl);
-        memRespQs[gaddr.addr].enq(rsp);
-        if(`DEBUG)$display("%d: GraphEngine[%0d][%0d] redirecting memResp to channel %0d", cur_cycle, fpgaId, laneId, gaddr.addr);
+        MemResp rsp = memRespQ.first();
+        memRespQ.deq();
+        memRespQs[rsp.gaddr.addr].enq(rsp);
+        if(`DEBUG)$display("%d: GraphEngine[%0d][%0d] redirecting memResp to channel %0d", cur_cycle, fpgaId, laneId, rsp.gaddr.addr);
     endrule
     
     
@@ -78,21 +83,21 @@ module mkGraphLanePipe(GraphLane);
         
         casQ2.enq(cxt);
         
-        Bit#(32) gaddr = pack(GaloisAddress{mod: MK_GRAPH, addr: 0});
+        GaloisAddress gaddr = GaloisAddress{mod: MK_GRAPH, addr: 0};
         Bit#(48) vaddrBase = nodePtr + (extend(cxt.nodeID) << `LG_GRAPH_NODE_SIZE);
         
         // Payload is the 3rd 32-bit (4B) entry in struct
         Bit#(48) vaddr = vaddrBase + (2 * 4);
         
         if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] CAS FSM start! enq mem req @ vaddr: %0x, cas_idx: %0d, cmpVal: %0d, swapVal: %0d", cur_cycle, fpgaId, laneId, vaddr, cxt.nodeID, cxt.cmpVal, cxt.swapVal);
-        memReqQ.enq(BC_MC_REQ{ cmd_sub: REQ_ATOM_CAS, rtnctl: gaddr, len: BC_4B, vadr: vaddr, data: {cxt.cmpVal, cxt.swapVal}});
+        memReqQ.enq(tagged MemCAS32{addr: vaddr, gaddr: gaddr, cmpVal: cxt.cmpVal, swapVal: cxt.swapVal});
     endrule
     
     rule cas2;
         CASPipe cxt = casQ2.first();
         casQ2.deq();
         
-        BC_MC_RSP rsp = memRespQs[0].first();
+        MemResp rsp = memRespQs[0].first();
         memRespQs[0].deq();
         
         // rsp.data is old data previous to swap, or the new data if cmp failed
@@ -115,16 +120,16 @@ module mkGraphLanePipe(GraphLane);
         readEdgeQ2.enq(cxt);
         if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] readEdge1 edgeId=%0d channel=%0d", cur_cycle, fpgaId, laneId, cxt.edgeID, cxt.channel); 
        
-        Bit#(32) gaddr = pack(GaloisAddress{mod: MK_GRAPH, addr: 1});
+        GaloisAddress gaddr = GaloisAddress{mod: MK_GRAPH, addr: 1};
         Bit#(48) vaddr = edgePtr + (extend(cxt.edgeID) << `LG_GRAPH_EDGE_SIZE);
-        memReqQ.enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: vaddr, data: ?});
+        memReqQ.enq(tagged MemRead64{addr: vaddr, gaddr: gaddr});
     endrule
     
     rule readEdge2;
         ReadEdgePipe cxt = readEdgeQ2.first();
         readEdgeQ2.deq();
         
-        BC_MC_RSP rsp = memRespQs[1].first();
+        MemResp rsp = memRespQs[1].first();
         memRespQs[1].deq();
         GraphEdge gedge = unpack(rsp.data);
         if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] readEdge2 done! edgeDest=%0d, edgeWeight=%0d, channel=%0d", cur_cycle, fpgaId, laneId, gedge.dest, gedge.weight, cxt.channel);
@@ -146,9 +151,9 @@ module mkGraphLanePipe(GraphLane);
         
         readNodeQ2.enq(cxt);
         
-        Bit#(32) gaddr = pack(GaloisAddress{mod: MK_GRAPH, addr: 2});
+        GaloisAddress gaddr = GaloisAddress{mod: MK_GRAPH, addr: 2};
         Bit#(48) vaddr = nodePtr + (extend(cxt.nodeID) << `LG_GRAPH_NODE_SIZE); // base + offset*16 (16B nodes)
-        memReqQ.enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: vaddr, data: ?});
+        memReqQ.enq(tagged MemRead64{addr: vaddr, gaddr: gaddr});
     endrule
     
     rule readNode2;
@@ -157,15 +162,15 @@ module mkGraphLanePipe(GraphLane);
         
         readNodeQ3.enq(cxt);
 
-        BC_MC_RSP rsp = memRespQs[2].first();
+        MemResp rsp = memRespQs[2].first();
         memRespQs[2].deq();
         readNodeQ3_partialNode.enq(rsp.data);
         
         Tuple2#(Bit#(32), Bit#(32)) tmp = unpack(rsp.data);
         if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] receive readNode resp #1, data = %0x (%0d %0d)", cur_cycle, fpgaId, laneId, rsp.data);
-        Bit#(32) gaddr = pack(GaloisAddress{mod: MK_GRAPH, addr: 3});
+        GaloisAddress gaddr = GaloisAddress{mod: MK_GRAPH, addr: 3};
         Bit#(48) vaddr = nodePtr + (extend(cxt.nodeID) << `LG_GRAPH_NODE_SIZE) + 8;
-        memReqQ.enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: vaddr, data: ?});    
+        memReqQ.enq(tagged MemRead64{addr: vaddr, gaddr: gaddr});
     endrule
     
     rule readNode3;
@@ -175,7 +180,7 @@ module mkGraphLanePipe(GraphLane);
         Bit#(64) partialNode = readNodeQ3_partialNode.first();
         readNodeQ3_partialNode.deq();
         
-        BC_MC_RSP rsp = memRespQs[3].first();
+        MemResp rsp = memRespQs[3].first();
         memRespQs[3].deq();
         GraphNode node = unpack({rsp.data, partialNode});
         

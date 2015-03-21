@@ -20,14 +20,13 @@ import BC_Transactors     :: *;
 
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
-import GraphLane::*;
 import GraphLanePipe::*;
 
 interface GraphEngine;
     interface Vector#(`GRAPH_PORTS, Put#(GraphReq)) req;
     interface Vector#(`GRAPH_PORTS, Get#(GraphResp)) resp;
-    interface Vector#(16, Get#(BC_MC_REQ)) memReq;
-    interface Vector#(16, Put#(BC_MC_RSP)) memResp;
+    interface Vector#(16, Get#(MemReq)) memReq;
+    interface Vector#(16, Put#(MemResp)) memResp;
 
     method Action init(BC_AEId fpgaId, BC_Addr nodePtr, BC_Addr edgePtr);
 endinterface
@@ -46,16 +45,13 @@ module mkGraphEngine(GraphEngine);
     Vector#(16, Reg#(BC_Addr)) edgePtr_staging2 <- replicateM(mkRegU);
 
     Vector#(`GRAPH_PORTS, FIFOF#(GraphResp)) respQ <- replicateM(mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT));
-
-    Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ <- replicateM(mkFIFOF);
-    Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
     
     Vector#(16, GraphLane) pipes <- replicateM(mkGraphLanePipe);
 
     function Put#(GraphReq) genReq(Integer i) = pipes[i].req;
     function Get#(GraphResp) genResp(Integer i) = pipes[i].resp;
-    function Get#(BC_MC_REQ) genMemReq(Integer i) = pipes[i].memReq;
-    function Put#(BC_MC_RSP) genMemResp(Integer i) = pipes[i].memResp;
+    function Get#(MemReq) genMemReq(Integer i) = pipes[i].memReq;
+    function Put#(MemResp) genMemResp(Integer i) = pipes[i].memResp;
 
 
     let fsm <- mkFSM(

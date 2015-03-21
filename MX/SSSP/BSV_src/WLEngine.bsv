@@ -25,8 +25,8 @@ interface WLEngine;
     interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) streamIn;
     interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) streamOut;
 
-    interface Vector#(16, Get#(BC_MC_REQ)) memReq;
-    interface Vector#(16, Put#(BC_MC_RSP)) memResp;
+    interface Vector#(16, Get#(MemReq)) memReq;
+    interface Vector#(16, Put#(MemResp)) memResp;
 
     method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
     method Bool isDone();
@@ -66,8 +66,8 @@ module mkWLEngine(WLEngine);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) reqQ <- replicateM(mkFIFOF);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) respQ <- replicateM(mkFIFOF);
     
-    Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ <- replicateM(mkFIFOF);
-    Vector#(16, FIFOF#(BC_MC_RSP)) memRespQ <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemReq)) memReqQ <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemResp)) memRespQ <- replicateM(mkFIFOF);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn0 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn1 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
@@ -130,11 +130,11 @@ module mkWLEngine(WLEngine);
            while(lock_lockData == 32'd1) seq
                action
                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: Reading lock bit at addr: %0x...", cur_cycle, fpgaId, lockLoc);
-                   memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_ATOM_CAS, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0001});
+                   memReqQ[0].enq(tagged MemCAS32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, cmpVal: 0, swapVal: 1});
                endaction
            
                action
-                   BC_MC_RSP rsp = memRespQ[0].first();
+                   MemResp rsp = memRespQ[0].first();
                    memRespQ[0].deq();
                    lock_lockData <= truncate(rsp.data);
                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: old lock bit = %0d", cur_cycle, fpgaId, rsp.data);
@@ -148,14 +148,14 @@ module mkWLEngine(WLEngine);
            // Get updated head and tail pointers
            action
                //$display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
-               Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
-               memReqQ[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: headPtrLoc, data: ?});
-               memReqQ[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: tailPtrLoc, data: ?});
+               GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
+               memReqQ[0].enq(tagged MemRead64{addr: headPtrLoc, gaddr: gaddr});
+               memReqQ[1].enq(tagged MemRead64{addr: tailPtrLoc, gaddr: gaddr});
            endaction
            
            action
-               BC_MC_RSP headRsp = memRespQ[0].first();
-               BC_MC_RSP tailRsp = memRespQ[1].first();
+               MemResp headRsp = memRespQ[0].first();
+               MemResp tailRsp = memRespQ[1].first();
                memRespQ[0].deq();
                memRespQ[1].deq();
                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: headPtr: %0x, tailPtr: %0x", cur_cycle, fpgaId, headRsp.data, tailRsp.data);
@@ -195,8 +195,8 @@ module mkWLEngine(WLEngine);
                            doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].deq();
                           
                            BC_Addr addr = bufferLoc + (tailPtr << `LG_WLENTRY_SIZE);
-                           Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
-                           memReqQ[4].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: gaddr, len: BC_8B, vadr: addr, data: pack(entry)});
+                           memReqQ[4].enq(tagged MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}, data: pack(entry)});
+                          
                            if(`DEBUG) $display("mkWLEngine: WriteFSM headPtr=%0d, tailPtr=%0d, packet: %x", headPtr, tailPtr, entry);
                            tailPtr <= tailPtr + 1;
                            writeFSM_issuedStore <= True;
@@ -226,24 +226,21 @@ module mkWLEngine(WLEngine);
                        writeFSM_issuedStore <= False;
                    end
                endaction
-           endseq                                  
+           endseq
            
            // Write head and tailPtrs
            action
                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: readFSM writing new head/tail ptrs, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, headPtr, tailPtr);
-               Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
-               memReqQ[4].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: gaddr, len: BC_8B, vadr: headPtrLoc, data: extend(headPtr)});
-               memReqQ[5].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: gaddr, len: BC_8B, vadr: tailPtrLoc, data: extend(tailPtr)});
+               GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
+               memReqQ[4].enq(tagged MemWrite64{addr: headPtrLoc, gaddr: gaddr, data: extend(headPtr)});
+               memReqQ[5].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr)});
            endaction
            
            // When head/tailPtr writes complete, unlock
            action
-               BC_MC_RSP headRsp = memRespQ[0].first();
-               BC_MC_RSP tailRsp = memRespQ[1].first();
                memRespQ[4].deq();
                memRespQ[5].deq();
-               memReqQ[4].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0000});
-               
+               memReqQ[4].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
                writeFSM_curBufIdx <= writeFSM_curBufIdx + 1;
            endaction
            
@@ -304,9 +301,7 @@ module mkWLEngine(WLEngine);
                    action
                        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries);
                        BC_Addr addr = bufferLoc + (headPtr << `LG_WLENTRY_SIZE);
-                       Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
-                       
-                       memReqQ[2].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: gaddr, len: BC_8B, vadr: addr, data: ?});
+                       memReqQ[2].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
                        
                        readFSM_curEntry <= readFSM_curEntry + 1;
                        
@@ -319,7 +314,7 @@ module mkWLEngine(WLEngine);
                    endaction
                    
                    action
-                       BC_MC_RSP rsp = memRespQ[2].first();
+                       MemResp rsp = memRespQ[2].first();
                        memRespQ[2].deq();
                        
                        WLEntry entry = unpack(rsp.data);
@@ -334,18 +329,16 @@ module mkWLEngine(WLEngine);
                // Write head and tailPtrs
                action
                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM writing new head/tail ptrs, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, headPtr, tailPtr);
-                   Bit#(32) gaddr = pack(GaloisAddress{mod: MK_WORKLIST, addr: ?});
-                   memReqQ[2].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: gaddr, len: BC_8B, vadr: headPtrLoc, data: extend(headPtr)});
-                   memReqQ[3].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: gaddr, len: BC_8B, vadr: tailPtrLoc, data: extend(tailPtr)});
+                   GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
+                   memReqQ[2].enq(tagged MemWrite64{addr: headPtrLoc, gaddr: gaddr, data: extend(headPtr)});
+                   memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr)});
                endaction
                
                // When head/tailPtr writes complete, unlock
                action
-                   BC_MC_RSP headRsp = memRespQ[0].first();
-                   BC_MC_RSP tailRsp = memRespQ[1].first();
                    memRespQ[2].deq();
                    memRespQ[3].deq();
-                   memReqQ[2].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0000});
+                   memReqQ[2].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
                endaction
                
                action
@@ -357,8 +350,7 @@ module mkWLEngine(WLEngine);
            else seq
                // No data, unlock and stall avoid needless contention
                action
-                   memReqQ[2].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod:MK_WORKLIST, addr: ?}), len: BC_4B, vadr: lockLoc, data: 64'h0000_0000});
-                   
+                   memReqQ[2].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM done, unlocking!", cur_cycle, fpgaId);
                endaction
                
@@ -459,17 +451,17 @@ module mkWLEngine(WLEngine);
     
     rule calcDone(started);
         // No readFSM.done since it's constantly triggered whenever any input buffers are empty!
-       
+        let cycle <- cur_cycle;
         Bool isDone = True;
         for(Integer i = 0; i < `WL_ENGINE_PORTS; i=i+1) begin
             if(reqQ[i].notEmpty || respQ[i].notEmpty || bufIn0[i].notEmpty || bufIn1[i].notEmpty || doubleBufOut[i][0].notEmpty || doubleBufOut[i][1].notEmpty) begin
                 isDone = False;
-                //$display("%0d: Lane %0d: reqQ:%b respQ:%b bufIn0:%b bufIn1:%b, doubBufOut0:%b, doubBufOut1:%b", cur_cycle, i, reqQ[i].notEmpty, respQ[i].notEmpty, bufIn0[i].notEmpty, bufIn1[i].notEmpty, doubleBufOut[i][0].notEmpty, doubleBufOut[i][1].notEmpty);
             end
+            //if(cycle == 10000000) $display("%0d: Lane %0d notEmpties: reqQ:%b respQ:%b bufIn0:%b bufIn1:%b, doubBufOut0:%b, doubBufOut1:%b, memReq:%b, memResp:%b", cur_cycle, i, reqQ[i].notEmpty, respQ[i].notEmpty, bufIn0[i].notEmpty, bufIn1[i].notEmpty, doubleBufOut[i][0].notEmpty, doubleBufOut[i][1].notEmpty,  memReqQ[i].notEmpty, memRespQ[i].notEmpty);
         end
         
         done <= (headPtr == tailPtr) && isDone;
-        //$display("%0d: wlEngine done calculation: HeadPtr:%0d, tailPtr:%0d, writeDone:%0b, readDone:%0b, isDone:%0b", cur_cycle, headPtr, tailPtr, writeFSM.done, readFSM.done, isDone);
+        //if(cycle == 10000000) $display("%0d: wlEngine done calculation: HeadPtr:%0d, tailPtr:%0d, writeDone:%0b, readDone:%0b, isDone:%0b", cur_cycle, headPtr, tailPtr, writeFSM.done, readFSM.done, isDone);
     endrule
     
     method isDone();

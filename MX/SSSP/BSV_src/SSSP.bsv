@@ -86,29 +86,56 @@ module mkSSSP(BC_HW2_IFC);
     Vector #(16, FIFOF #(BC_MC_flush_req)) f_flush_reqs <- replicateM (mkFIFOF);
     Vector #(16, FIFOF #(BC_MC_flush_rsp)) f_flush_rsps <- replicateM (mkFIFOF);
 
-    Vector#(16, FIFOF#(BC_MC_REQ)) ssspOutQs <- replicateM(mkFIFOF);
-    Vector#(16, FIFOF#(BC_MC_RSP)) ssspInQs  <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemReq)) ssspOutQs <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemResp)) ssspInQs  <- replicateM(mkFIFOF);
     
     Vector#(`NUM_ENGINES, Engine) engines;
     for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
         engines[i] <- mkSSSPEngine(reset_by engineRsts[i].new_rst);
     end
     
-    Vector#(`NUM_ENGINES, FIFOF#(BC_MC_REQ)) engineOutQs <- replicateM(mkFIFOF);
-    Vector#(`NUM_ENGINES, FIFOF#(BC_MC_RSP)) engineInQs  <- replicateM(mkFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(MemReq)) engineOutQs <- replicateM(mkFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(MemResp)) engineInQs  <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, Reg#(Bit#(64))) engineResults <- replicateM(mkRegU);
     
     Worklist worklist <- mkWorklistFIFO(reset_by worklistRst.new_rst);
-    Vector#(16, FIFOF#(BC_MC_REQ)) worklistOutQs <- replicateM(mkFIFOF);
-    Vector#(16, FIFOF#(BC_MC_RSP)) worklistInQs  <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemReq)) worklistOutQs <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemResp)) worklistInQs  <- replicateM(mkFIFOF);
     
     GraphEngine graph <- mkGraphEngine(reset_by graphRst.new_rst);
-    Vector#(16, FIFOF#(BC_MC_REQ)) graphOutQs <- replicateM(mkFIFOF);
-    Vector#(16, FIFOF#(BC_MC_RSP)) graphInQs  <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemReq)) graphOutQs <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemResp)) graphInQs  <- replicateM(mkFIFOF);
     
     rule watchdogInc;
         watchdog <= watchdog + 1;
     endrule
+    
+    function BC_MC_REQ memReqToBC(MemReq req);
+        if(req matches tagged MemRead64 .mem) begin
+            return BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: extend(pack(mem.gaddr)), len: BC_8B, vadr: mem.addr, data: ?};
+        end
+        else if(req matches tagged MemRead32 .mem) begin
+            return BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: extend(pack(mem.gaddr)), len: BC_4B, vadr: mem.addr, data: ?};
+        end
+        else if(req matches tagged MemWrite64 .mem) begin
+            return BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: extend(pack(mem.gaddr)), len: BC_8B, vadr: mem.addr, data: mem.data};
+        end
+        else if(req matches tagged MemWrite32 .mem) begin
+            return BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: extend(pack(mem.gaddr)), len: BC_4B, vadr: mem.addr, data: extend(mem.data)};
+        end
+        else if(req matches tagged MemCAS32 .mem) begin
+            return BC_MC_REQ{cmd_sub: REQ_ATOM_CAS, rtnctl: extend(pack(mem.gaddr)), len: BC_4B, vadr: mem.addr, data: {mem.cmpVal, mem.swapVal}};
+        end
+        else begin
+            //$display("INVALID!");
+            BC_MC_REQ r = ?;
+            return r;
+        end
+    endfunction
+    
+    function MemResp bcToMemResp(BC_MC_RSP rsp);
+        return MemResp{gaddr: unpack(truncate(rsp.rtnctl)), data: rsp.data};
+    endfunction
     
     for(Integer i = 0; i < 16; i = i + 1) begin
 
@@ -118,10 +145,6 @@ module mkSSSP(BC_HW2_IFC);
         mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
         mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
         
-        //mkConnection(engines[i].graphReq, engineGraphChannels[i].reqToChan);
-        //mkConnection(engineGraphChannels[i].reqFromChan, graph.req[i]);
-        //mkConnection(graph.resp[i], engineGraphChannels[i].respToChan);
-        //mkConnection(engineGraphChannels[i].respFromChan, engines[i].graphResp);
         mkConnection(engines[i].graphReq, graph.req[i]);
         mkConnection(graph.resp[i], engines[i].graphResp);
         
@@ -130,27 +153,27 @@ module mkSSSP(BC_HW2_IFC);
         
         rule toMem(doneResetting && (engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty || ssspOutQs[i].notEmpty));
             if(graphOutQs[i].notEmpty) begin
-                BC_MC_REQ req = graphOutQs[i].first();
+                MemReq req = graphOutQs[i].first();
                 graphOutQs[i].deq();
-                memReqQ[i].enq(req);
+                memReqQ[i].enq(memReqToBC(req));
                 //$display("toMem Graph routing to mem %0d ", i, fshow(req));
             end
             else if(engineOutQs[i].notEmpty) begin
-                BC_MC_REQ req = engineOutQs[i].first();
+                MemReq req = engineOutQs[i].first();
                 engineOutQs[i].deq();
-                memReqQ[i].enq(req);
+                memReqQ[i].enq(memReqToBC(req));
                 //$display("toMem Engine routing to mem %0d ", i, fshow(req));
             end
             else if(worklistOutQs[i].notEmpty) begin
-                BC_MC_REQ req = worklistOutQs[i].first();
+                MemReq req = worklistOutQs[i].first();
                 worklistOutQs[i].deq();
-                memReqQ[i].enq(req);
+                memReqQ[i].enq(memReqToBC(req));
                 //$display("toMem WorkList routing to mem %0d ", i, fshow(req));
             end
             else if(ssspOutQs[i].notEmpty) begin
-                BC_MC_REQ req = ssspOutQs[i].first();
+                MemReq req = ssspOutQs[i].first();
                 ssspOutQs[i].deq();
-                memReqQ[i].enq(req);
+                memReqQ[i].enq(memReqToBC(req));
                 //$display("toMem SSSP routing to mem %0d ", i, fshow(req));
             end 
         endrule
@@ -160,22 +183,22 @@ module mkSSSP(BC_HW2_IFC);
             BC_MC_RSP resp = memRespQ[i].first();
             memRespQ[i].deq();
             
-            GaloisAddress gaddr = unpack(resp.rtnctl);
+            GaloisAddress gaddr = unpack(truncate(resp.rtnctl));
             //$display("Received packed gaddr %d", gaddr);
             if(gaddr.mod == MK_ENGINE) begin
                 //$display("fromMem packet routing to Engine %0d", i);
-                engineInQs[i].enq(resp);
+                engineInQs[i].enq(bcToMemResp(resp));
             end
             else if(gaddr.mod == MK_WORKLIST) begin
                 //$display("fromMem packet routing to Worklist %0d", i);
-                worklistInQs[i].enq(resp);
+                worklistInQs[i].enq(bcToMemResp(resp));
             end
             else if(gaddr.mod == MK_GRAPH) begin
-                graphInQs[i].enq(resp);
+                graphInQs[i].enq(bcToMemResp(resp));
             end
             else if(gaddr.mod == MK_SSSP) begin
                 //$display("fromMem packet routing to SSSP %0d", i);
-                ssspInQs[i].enq(resp);
+                ssspInQs[i].enq(bcToMemResp(resp));
             end
             else begin
                 $display("ERROR: fromMem packet dest unknown: ", fshow(resp));
@@ -186,8 +209,8 @@ module mkSSSP(BC_HW2_IFC);
     function Action send_rd_req(BC_Addr base, Integer param_id);
         action
 	        let addr = base + fromInteger(param_id * 64);
-	        let req = BC_MC_REQ {cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B,
-			   vadr: addr, data: ?};
+	        //let req = BC_MC_REQ {cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?};
+            MemReq req = MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}};
 	        ssspOutQs[param_id].enq(req);
             //$display("%0d: mkSSSP[%0d]: send_rd_eq on channel %0d, addr: %0x", cur_cycle, fpgaId, param_id, addr);
         endaction
@@ -196,39 +219,22 @@ module mkSSSP(BC_HW2_IFC);
     function Action send_wr_req(BC_Addr base, Integer param_id, BC_Data x);
         action
 	        let addr = base + fromInteger(param_id * 64);
-	        let req = BC_MC_REQ {cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B,
-			   vadr: addr, data: x};
+	        //let req = BC_MC_REQ {cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: x};
+            MemReq req = MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}, data: x};
 	        ssspOutQs[param_id].enq(req);
         endaction
     endfunction
     
-    function ActionValue #(BC_Addr) recv_rd_rsp(Integer param_id);
+    function ActionValue #(Bit#(64)) recv_rd_rsp(Integer param_id);
         actionvalue
-	        let rsp <- toGet(ssspInQs[param_id]).get;
-            
-            // Assertion: the only responses in f_rsps[] should be RSP_RD_DATA responses
-	        // for the parameter read requests
-	        if (rsp.cmd != RSP_RD_DATA) begin
-	            $display("INTERNAL ERROR: mkSSSP: memory response for parameter-read is of wrong RSP_TYPE: ", fshow(rsp.cmd));
-	            $display("    Response is: ", fshow(rsp));
-	            $finish(1);
-	        end
-            
-	        return truncate(rsp.data);
+	        let rsp <- toGet(ssspInQs[param_id]).get;            
+	        return rsp.data;
         endactionvalue
     endfunction
     
     function Action recv_wr_rsp(Integer param_id);
         action
 	        let rsp <- toGet(ssspInQs[param_id]).get;
-            
-	        // Assertion: the only responses in f_rsps[] should be RSP_WR_CMP responses
-	        // for the paramter write requests
-	        if (rsp.cmd != RSP_WR_CMP) begin
-	            $display("INTERNAL ERROR: mkSSSP: memory response for parameter-write is of wrong RSP_TYPE: ", fshow(rsp.cmd));
-	            $display("    Response is: ", fshow(rsp));
-	            $finish(1);
-	        end
         endaction
     endfunction
     
@@ -266,31 +272,31 @@ module mkSSSP(BC_HW2_IFC);
 	       // Receive the parameters for this FPGA (read responses, in parallel)
 	       action
 	           let nodePtr   <- recv_rd_rsp(param_nodePtr);
-               paramNodePtr <= nodePtr;
+               paramNodePtr <= truncate(nodePtr);
            endaction
            action
 	           let edgePtr   <- recv_rd_rsp(param_edgePtr);
-               paramEdgePtr <= edgePtr;
+               paramEdgePtr <= truncate(edgePtr);
            endaction
            action
 	           let jobsPtr   <- recv_rd_rsp(param_jobsPtr);
-               paramJobsPtr <= jobsPtr;
+               paramJobsPtr <= truncate(jobsPtr);
            endaction
            action
 	           let metaPtr <- recv_rd_rsp(param_metaPtr);
-               paramMetaPtr <= metaPtr;
+               paramMetaPtr <= truncate(metaPtr);
            endaction
            action
 	           let outputPtr <- recv_rd_rsp(param_output);
-               paramOutputPtr <= outputPtr;
+               paramOutputPtr <= truncate(outputPtr);
            endaction
            action
 	           let donePtr   <- recv_rd_rsp(param_donePtr);
-               paramDonePtr <= donePtr;
+               paramDonePtr <= truncate(donePtr);
            endaction
            action
 	           let sentinel  <- recv_rd_rsp(param_sentinel);
-               paramSentinel <= sentinel;
+               paramSentinel <= truncate(sentinel);
            endaction
            action
                $display ("%0d: mkSSSP [%0d]: params are %0h 0x%0h 0x%0h 0x%0h %0h %0h %0h", cur_cycle, fpgaId, paramNodePtr, paramEdgePtr, paramJobsPtr, paramMetaPtr, paramOutputPtr, paramDonePtr, paramSentinel);
@@ -298,12 +304,12 @@ module mkSSSP(BC_HW2_IFC);
            
            // Read metadata
            action
-               Bit#(32) rtn = pack(GaloisAddress{mod: MK_SSSP, addr: 0});
-               ssspOutQs[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_lock*8), data: ?});
-	           ssspOutQs[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_headPtr*8), data: ?});
-	           ssspOutQs[2].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_tailPtr*8), data: ?});
-	           ssspOutQs[3].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: rtn, len: BC_8B, vadr: paramMetaPtr+fromInteger(param_wlSize*8), data: ?});
-           endaction
+               GaloisAddress rtn = GaloisAddress{mod: MK_SSSP, addr: 0};
+               ssspOutQs[0].enq(MemRead64{addr: paramMetaPtr+fromInteger(param_lock*8), gaddr: rtn});
+               ssspOutQs[1].enq(MemRead64{addr: paramMetaPtr+fromInteger(param_headPtr*8), gaddr: rtn});
+               ssspOutQs[2].enq(MemRead64{addr: paramMetaPtr+fromInteger(param_tailPtr*8), gaddr: rtn});
+               ssspOutQs[3].enq(MemRead64{addr: paramMetaPtr+fromInteger(param_wlSize*8), gaddr: rtn});
+       endaction
            
            action
                let lock <- recv_rd_rsp(param_lock);
@@ -315,7 +321,7 @@ module mkSSSP(BC_HW2_IFC);
                BC_Addr headPtrLoc = paramMetaPtr + fromInteger(param_headPtr) * 8;
                BC_Addr tailPtrLoc = paramMetaPtr + fromInteger(param_tailPtr) * 8;
                
-               worklist.init(fpgaId, lockLoc, headPtrLoc, tailPtrLoc, wlSize, paramJobsPtr);
+               worklist.init(fpgaId, lockLoc, headPtrLoc, tailPtrLoc, truncate(wlSize), paramJobsPtr);
            endaction
            
            action
@@ -376,7 +382,7 @@ module mkSSSP(BC_HW2_IFC);
                action
                    //$display("mkSSSP[%0d]: Local is all done!, numAllDones = %d", fpgaId, numAllDones);
                    BC_Addr addr = paramDonePtr + (extend(fpgaId) << 3);
-                   ssspOutQs[0].enq(BC_MC_REQ{cmd_sub: REQ_WR, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: extend(numAllDones)});
+                   ssspOutQs[0].enq(MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}, data: extend(numAllDones)});
                endaction
                
                action
@@ -386,13 +392,13 @@ module mkSSSP(BC_HW2_IFC);
                // Check Dones from all FPGAs
                action
                    BC_Addr addr = paramDonePtr + fromInteger(0*8);
-                   ssspOutQs[0].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+                   ssspOutQs[0].enq(MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}});
                    addr = paramDonePtr + fromInteger(1*8);
-                   ssspOutQs[1].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+                   ssspOutQs[1].enq(MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}});
                    addr = paramDonePtr + fromInteger(2*8);
-                   ssspOutQs[2].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+                   ssspOutQs[2].enq(MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}});
                    addr = paramDonePtr + fromInteger(3*8);
-                   ssspOutQs[3].enq(BC_MC_REQ{cmd_sub: REQ_RD, rtnctl: pack(GaloisAddress{mod: MK_SSSP, addr: 0}), len: BC_8B, vadr: addr, data: ?});
+                   ssspOutQs[3].enq(MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}});
                endaction
                
                action

@@ -1,5 +1,7 @@
 package GaloisTypes;
 
+import BC_HW_IFC::*;
+
 typedef Bit#(32) NodeID;  // Probably needs to be increased
 typedef Bit#(32) NodePayload;
 typedef Bit#(32) NodeNumEdges;
@@ -74,7 +76,43 @@ typedef enum {
 
 typedef struct {
    GaloisModule mod;
-   Bit#(29) addr;
+   Bit#(5) addr;
 } GaloisAddress deriving(Bits, Eq);
+
+typedef union tagged {
+   struct {
+      BC_Addr addr;
+      GaloisAddress gaddr;
+   } MemRead64;
+
+   struct {
+      BC_Addr addr;
+      GaloisAddress gaddr;
+   } MemRead32;
+   
+   struct {
+      BC_Addr addr;
+      GaloisAddress gaddr;
+      Bit#(64) data;
+   } MemWrite64;
+
+   struct {
+      BC_Addr addr;
+      GaloisAddress gaddr;
+      Bit#(32) data;
+   } MemWrite32;
+   
+   struct {
+      BC_Addr addr;
+      GaloisAddress gaddr;
+      Bit#(32) cmpVal;
+      Bit#(32) swapVal;
+   } MemCAS32;
+} MemReq deriving(Bits, Eq);
+
+typedef struct {
+   GaloisAddress gaddr;
+   Bit#(64) data;
+} MemResp deriving(Bits, Eq);
 
 endpackage
