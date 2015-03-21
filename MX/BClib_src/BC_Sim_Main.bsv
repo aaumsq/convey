@@ -162,15 +162,17 @@ module mkBC_Sim_Main (Empty);
 	 action
 	    UInt #(64) tot_rds = 0;
 	    UInt #(64) tot_wrs = 0;
+	    UInt #(64) tot_ats = 0;
 	    for (Integer fpga = 0; fpga < bc_num_FPGAs; fpga = fpga + 1) begin
 	       for (Integer j = 0; j < 16; j = j + 1) begin
-		  match { .rds, .wrs } = vv_mc_models [fpga][j].rd_wr_counts;
-		  $display ("BC_Sim_Main: FPGA [%1d] mem [%3d] accesses: %10d reads, %10d writes", fpga, j, rds, wrs);
+		  match { .rds, .wrs, .ats } = vv_mc_models [fpga][j].rd_wr_counts;
+		  $display ("BC_Sim_Main: FPGA [%1d] mem [%3d] accesses: %10d reads, %10d writes, %10d atomics", fpga, j, rds, wrs, ats);
 		  tot_rds = tot_rds + rds;
 		  tot_wrs = tot_wrs + wrs;
+		  tot_ats = tot_ats + ats;
 	      end
 	    end
-	    $display ("BC_Sim_Main:          Total mem accesses: %10d reads, %10d writes", tot_rds, tot_wrs);
+	    $display ("BC_Sim_Main:          Total mem accesses: %10d reads, %10d writes, %10d atomics", tot_rds, tot_wrs, tot_ats);
 	 endaction
       endseq
       );

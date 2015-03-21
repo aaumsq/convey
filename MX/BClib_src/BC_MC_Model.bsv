@@ -81,7 +81,7 @@ interface BC_MC_Model_IFC;
 			     UInt #(2) debug_mem_trace_verbosity,
 			     Bool debug_stop_on_wrong_bank,
 			     Bool debug_stop_on_unaligned);
-   method Tuple2 #(UInt #(64), UInt #(64)) rd_wr_counts;
+   method Tuple3 #(UInt #(64), UInt #(64), UInt #(64)) rd_wr_counts;
 endinterface
 
 // ================================================================
@@ -120,6 +120,7 @@ module mkBC_MC_Model #(parameter UInt #(2) fpga, parameter UInt #(4) bank)
    // statistics
    Reg #(UInt #(64))  rg_n_reads  <- mkReg (0);
    Reg #(UInt #(64))  rg_n_writes <- mkReg (0);
+   Reg #(UInt #(64))  rg_n_atomic <- mkReg (0);
 
    // ----------------
    // Checks that the address LSBs are consistent with the 'size' of request
@@ -195,6 +196,7 @@ module mkBC_MC_Model #(parameter UInt #(2) fpga, parameter UInt #(4) bank)
 						  extend (req.vadr),
 						  req.data);
 		     rsp_cmd = RSP_ATOMIC_DATA;
+		     rg_n_atomic <= rg_n_atomic + 1;
 		  endaction
       endcase
 
@@ -247,8 +249,8 @@ module mkBC_MC_Model #(parameter UInt #(2) fpga, parameter UInt #(4) bank)
       rg_debug_stop_on_unaligned   <= debug_stop_on_unaligned;
    endmethod
 
-   method Tuple2 #(UInt #(64), UInt #(64)) rd_wr_counts;
-      return (tuple2 (rg_n_reads, rg_n_writes));
+   method Tuple3 #(UInt #(64), UInt #(64), UInt #(64)) rd_wr_counts;
+      return (tuple3 (rg_n_reads, rg_n_writes, rg_n_atomic));
    endmethod
 endmodule
 
