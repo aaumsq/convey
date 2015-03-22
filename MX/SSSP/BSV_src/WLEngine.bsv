@@ -18,6 +18,7 @@ import BC_Utils           :: *;
 import BC_HW_IFC          :: *;
 import BC_Transactors     :: *;
 
+import BufBRAMFIFOF::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
@@ -73,7 +74,7 @@ module mkWLEngine(WLEngine);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn1 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
     Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(1))) curBufIn <- replicateM(mkRegU);
 
-    Vector#(`WL_ENGINE_PORTS, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
+    Vector#(`WL_ENGINE_PORTS, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBufBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
     Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(1))) curBufOut <- replicateM(mkRegU);
 
 
@@ -171,6 +172,8 @@ module mkWLEngine(WLEngine);
     Reg#(Bit#(1)) writeFSM_curBufIdx <- mkRegU;
     Reg#(Bool) writeFSM_done <- mkRegU;
     Reg#(Bool) writeFSM_issuedStore <- mkRegU;
+    Reg#(BC_Addr) writeFSM_wlSize <- mkRegU;
+    Reg#(BC_Addr) writeFSM_maxSizeMinusOne <- mkRegU;
     let writeFSM <- mkFSM(
        seq
            action
@@ -186,11 +189,16 @@ module mkWLEngine(WLEngine);
                lockFSM.waitTillDone();
            endaction
            
+           action
+               writeFSM_wlSize <= getWLSize(headPtr, tailPtr, maxSize);
+               writeFSM_maxSizeMinusOne <= maxSize-1;
+           endaction
+           
            while(!writeFSM_done) seq
                action
                    if(`DEBUG) $display("%0d: mkWLEngine WriteFSM checking doubleBufOut[%0d][%0d], writeFSM_done: %0d, notEmpty: %0d", cur_cycle, writeFSM_curIdx, writeFSM_curBufIdx, writeFSM_done, doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].notEmpty);
                    if(doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].notEmpty) begin
-                       if(getWLSize(headPtr, tailPtr, maxSize) < (maxSize-1)) begin
+                       if(writeFSM_wlSize < writeFSM_maxSizeMinusOne) begin
                            WLEntry entry = doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].first();
                            doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].deq();
                           
@@ -199,6 +207,7 @@ module mkWLEngine(WLEngine);
                           
                            if(`DEBUG) $display("mkWLEngine: WriteFSM headPtr=%0d, tailPtr=%0d, packet: %x", headPtr, tailPtr, entry);
                            tailPtr <= tailPtr + 1;
+                           writeFSM_wlSize <= writeFSM_wlSize + 1;
                            writeFSM_issuedStore <= True;
                        end
                        else begin
@@ -220,6 +229,7 @@ module mkWLEngine(WLEngine);
                endaction
                    
                action
+                   // TODO: Allow multiple writes in flight
                    if(writeFSM_issuedStore) begin
                        if(`DEBUG) $display("%0d: mkWLEngine: WriteFSM write entry finished", cur_cycle);
                        memRespQ[4].deq();
