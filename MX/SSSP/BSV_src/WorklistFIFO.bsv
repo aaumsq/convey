@@ -22,6 +22,7 @@ import BC_Transactors     :: *;
 //import CoalescingCounter::*;
 import WLEngine::*;
 import BufBRAMFIFOF::*;
+import WireFIFOF::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
@@ -42,7 +43,7 @@ module mkWorklistFIFO(Worklist);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) enqQs <- replicateM(mkFIFOF);
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) deqQs <- replicateM(mkFIFOF);
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) stealQs <- replicateM(mkFIFOF);
+    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) stealQs <- replicateM(mkSizedWireFIFOF(2));
     Vector#(`WL_ENGINE_PORTS, Reg#(Bool)) reqSteals <- replicateM(mkRegU);
     
     Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineQs <- replicateM(mkSizedBufBRAMFIFOF(1024));
@@ -97,16 +98,6 @@ module mkWorklistFIFO(Worklist);
             if(`DEBUG) $display("WorklistFIFO filling engineQ[%0d] ", i, fshow(pkt));
         endrule
         
-        rule processSteal(started);
-            if(isValid(stealQEnqs[i].wget)) begin
-                stealQs[i].enq(fromMaybe(?, stealQEnqs[i].wget));
-            end
-            
-            if(stealQDeqs[i]) begin
-                stealQs[i].deq();
-            end
-        endrule
-        
         rule processEnq(started);
             WLEntry pkt = enqQs[i].first;
             enqQs[i].deq();
@@ -118,7 +109,7 @@ module mkWorklistFIFO(Worklist);
                 stealIdx = i + 1;
             
             if(reqSteals[stealIdx] && stealQs[stealIdx].notFull)
-                stealQEnqs[stealIdx].wset(pkt);
+                stealQs[stealIdx].enq(pkt);
             else if(engineQs[i].notFull) begin
                 if(`DEBUG) $display("WorklistFIFO enqing engineQ[%0d] ", i, fshow(pkt));
                 engineQs[i].enq(pkt);
@@ -137,7 +128,7 @@ module mkWorklistFIFO(Worklist);
             end
             else if(stealQs[i].notEmpty) begin
                 let pkt = stealQs[i].first();
-                stealQDeqs[i].send();
+                stealQs[i].deq();
                 if(`DEBUG) $display("Lane %0d deq from stealQ", i);
                 deqQs[i].enq(pkt);
                 reqSteals[i] <= False;
