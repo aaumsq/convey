@@ -36,7 +36,6 @@ interface Engine;
     interface Put#(GraphResp) graphResp;
 endinterface
 
-`define SSSPENGINE_CAS_IN_FLIGHT 16
 (* synthesize, descending_urgency = "casDone, cas, deqCasStall, recvDestNode, casRetry, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
 module mkSSSPEngine(Engine ifc);
     Reg#(BC_AEId) fpgaId <-mkRegU;
@@ -49,14 +48,14 @@ module mkSSSPEngine(Engine ifc);
     
     FIFOF#(GraphReq) graphReqQ <- mkSizedFIFOF(2);
     FIFOF#(GraphResp) graphRespQ <- mkSizedFIFOF(2);
-    Vector#(4, CreditFIFOF#(GraphReq, GraphResp)) graphQs <- replicateM(mkCreditFIFOF(16));
+    Vector#(4, CreditFIFOF#(GraphReq, GraphResp)) graphQs <- replicateM(mkCreditFIFOF(`SSSPENGINE_NUM_IN_FLIGHT));
     
     FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(2);
-    FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(16);  // # entries = # edgeReq in flight
+    FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT);  // # entries = # edgeReq in flight
     
     FIFOF#(NodePayload) newDistQ <- mkSizedFIFOF(16);   // # entries = # destNode in flight
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ1 <- mkSizedFIFOF(2);
-    FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ2 <- mkSizedFIFOF(`SSSPENGINE_CAS_IN_FLIGHT); // # entries = # CAS requests in flight
+    FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ2 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT); // # entries = # CAS requests in flight
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextRetryQ <- mkSizedFIFOF(2);
     CoalescingCounter casNumInFlight <- mkCCounter();
     
@@ -312,7 +311,7 @@ module mkSSSPEngine(Engine ifc);
         for(Integer i = 0; i < 4; i=i+1) begin
             graphQs[i].init(fpgaid, laneid, fromInteger(i));
         end
-        casNumInFlight.init(`SSSPENGINE_CAS_IN_FLIGHT);
+        casNumInFlight.init(`SSSPENGINE_NUM_IN_FLIGHT);
         
         numWorkFetched <= 0;
         numWorkRetired <= 0;

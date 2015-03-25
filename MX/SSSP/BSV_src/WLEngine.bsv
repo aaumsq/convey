@@ -19,6 +19,7 @@ import BC_HW_IFC          :: *;
 import BC_Transactors     :: *;
 
 import BufBRAMFIFOF::*;
+import CoalescingCounter::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
@@ -171,9 +172,15 @@ module mkWLEngine(WLEngine);
     Reg#(Bit#(`WL_LG_ENGINE_PORTS)) writeFSM_curIdx <- mkRegU;
     Reg#(Bit#(1)) writeFSM_curBufIdx <- mkRegU;
     Reg#(Bool) writeFSM_done <- mkRegU;
-    Reg#(Bool) writeFSM_issuedStore <- mkRegU;
     Reg#(BC_Addr) writeFSM_wlSize <- mkRegU;
     Reg#(BC_Addr) writeFSM_maxSizeMinusOne <- mkRegU;
+    CoalescingCounter writeFSM_numWrites <- mkCCounter();
+    
+    rule writeFSM_catchWriteAcks(writeFSM_numWrites.getVal() > 0);
+        memRespQ[4].deq();
+        writeFSM_numWrites.dec();
+    endrule
+    
     let writeFSM <- mkFSM(
        seq
            action
@@ -181,7 +188,6 @@ module mkWLEngine(WLEngine);
                lockFSM.start();
                writeFSM_curIdx <= 0;
                writeFSM_done <= False;
-               writeFSM_issuedStore <= False;
            endaction
            
            action
@@ -204,11 +210,11 @@ module mkWLEngine(WLEngine);
                           
                            BC_Addr addr = bufferLoc + (tailPtr << `LG_WLENTRY_SIZE);
                            memReqQ[4].enq(tagged MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}, data: pack(entry)});
+                           writeFSM_numWrites.inc();
                           
                            if(`DEBUG) $display("mkWLEngine: WriteFSM headPtr=%0d, tailPtr=%0d, packet: %x", headPtr, tailPtr, entry);
                            tailPtr <= tailPtr + 1;
                            writeFSM_wlSize <= writeFSM_wlSize + 1;
-                           writeFSM_issuedStore <= True;
                        end
                        else begin
                            if(`DEBUG) $display("mkWLEngine WorkList is FULL! Breaking...");
@@ -227,14 +233,12 @@ module mkWLEngine(WLEngine);
                        end
                    end
                endaction
-                   
+           endseq
+           
+           while(writeFSM_numWrites.getVal() > 0) seq
                action
-                   // TODO: Allow multiple writes in flight
-                   if(writeFSM_issuedStore) begin
-                       if(`DEBUG) $display("%0d: mkWLEngine: WriteFSM write entry finished", cur_cycle);
-                       memRespQ[4].deq();
-                       writeFSM_issuedStore <= False;
-                   end
+                   //$display("%0d: WriteFSM: waiting for %0d writes to complete", cur_cycle, writeFSM_numWrites.getVal());
+                   noAction;
                endaction
            endseq
            
@@ -268,6 +272,21 @@ module mkWLEngine(WLEngine);
     Reg#(Bit#(`WL_LG_ENGINE_PORTS)) readFSM_bufIdx <- mkRegU;
     Reg#(Bit#(1)) readFSM_buf <- mkRegU;
     Reg#(Bool) readFSM_success <- mkRegU;
+    CoalescingCounter readFSM_numReads <- mkCCounter;
+    
+    rule readFSM_processReads(readFSM_numReads.getVal() > 0);
+        MemResp rsp = memRespQ[2].first();
+        memRespQ[2].deq();
+        readFSM_numReads.dec();
+        
+        WLEntry entry = unpack(rsp.data);
+        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM entry priority: %0x, graphId: %0x", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
+        if(readFSM_bufIdx == 0)
+            bufIn0[readFSM_bufIdx].enq(entry);
+        else
+            bufIn1[readFSM_bufIdx].enq(entry);
+    endrule
+    
     let readFSM <- mkFSM(
        seq
            action
@@ -312,6 +331,7 @@ module mkWLEngine(WLEngine);
                        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries);
                        BC_Addr addr = bufferLoc + (headPtr << `LG_WLENTRY_SIZE);
                        memReqQ[2].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
+                       readFSM_numReads.inc();
                        
                        readFSM_curEntry <= readFSM_curEntry + 1;
                        
@@ -322,17 +342,12 @@ module mkWLEngine(WLEngine);
                          headPtr <= headPtr + 1;
                        end
                    endaction
-                   
+               endseq
+               
+               while(readFSM_numReads.getVal() > 0) seq
                    action
-                       MemResp rsp = memRespQ[2].first();
-                       memRespQ[2].deq();
-                       
-                       WLEntry entry = unpack(rsp.data);
-                       if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM entry priority: %0x, graphId: %0x", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
-                       if(readFSM_bufIdx == 0)
-                         bufIn0[readFSM_bufIdx].enq(entry);
-                       else
-                         bufIn1[readFSM_bufIdx].enq(entry);
+                       //$display("%0d: ReadFSM: waiting for %0d reads to complete", cur_cycle, readFSM_numReads.getVal());
+                       noAction;
                    endaction
                endseq
                
@@ -487,7 +502,10 @@ module mkWLEngine(WLEngine);
         maxSize <= maxsize;
         bufferLoc <= bufferloc;
         started <= True;
-       
+        
+        writeFSM_numWrites.init(1023);
+        readFSM_numReads.init(1023);
+        
         writeFSM_curIdx <= 0;
         writeFSM_curBufIdx <= 0;
         triggerWriteFSM_timeout <= 0;

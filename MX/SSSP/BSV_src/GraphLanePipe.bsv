@@ -58,7 +58,7 @@ module mkGraphLanePipe(GraphLane);
     
     Reg#(Bool) started <- mkReg(False);
     
-    FIFOF#(GraphResp) respQ <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
+    FIFOF#(GraphResp) respQ <- mkSizedFIFOF(2);
 
     FIFOF#(MemReq) memReqQ <- mkFIFOF;
     FIFOF#(MemResp) memRespQ <- mkFIFOF;
@@ -75,7 +75,7 @@ module mkGraphLanePipe(GraphLane);
     
     // Graph Payload CAS pipeline
     FIFOF#(CASPipe) casQ <- mkFIFOF;
-    FIFOF#(CASPipe) casQ2 <- mkSizedFIFOF(16);
+    FIFOF#(CASPipe) casQ2 <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
     
     rule cas;
         CASPipe cxt = casQ.first();
@@ -111,7 +111,7 @@ module mkGraphLanePipe(GraphLane);
     
     // Read Edge Pipeline
     FIFOF#(ReadEdgePipe) readEdgeQ <- mkFIFOF;
-    FIFOF#(ReadEdgePipe) readEdgeQ2 <- mkSizedFIFOF(16);
+    FIFOF#(ReadEdgePipe) readEdgeQ2 <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
     
     rule readEdge;
         ReadEdgePipe cxt = readEdgeQ.first();
@@ -141,9 +141,9 @@ module mkGraphLanePipe(GraphLane);
 
     // Read Node Pipe
     FIFOF#(ReadNodePipe) readNodeQ <- mkFIFOF;
-    FIFOF#(ReadNodePipe) readNodeQ2 <- mkSizedFIFOF(16);
-    FIFOF#(ReadNodePipe) readNodeQ3 <- mkSizedFIFOF(16);
-    FIFOF#(Bit#(64)) readNodeQ3_partialNode <- mkSizedFIFOF(16);
+    FIFOF#(ReadNodePipe) readNodeQ2 <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
+    FIFOF#(ReadNodePipe) readNodeQ3 <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
+    FIFOF#(Bit#(64)) readNodeQ3_partialNode <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
     
     rule readNode;
         ReadNodePipe cxt = readNodeQ.first();

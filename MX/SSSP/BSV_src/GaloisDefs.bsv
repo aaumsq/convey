@@ -6,10 +6,12 @@
 `define WL_WLFIFO_SIZE 1024
 
 `define GRAPH_PORTS 16
-`define GRAPH_NUM_IN_FLIGHT 32
+`define GRAPH_NUM_IN_FLIGHT 16
 
 `define LG_GRAPH_NODE_SIZE 4
 `define LG_GRAPH_EDGE_SIZE 3
+
+`define SSSPENGINE_NUM_IN_FLIGHT 16
 
 `define DEBUG False
 `endif
