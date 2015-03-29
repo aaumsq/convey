@@ -22,6 +22,20 @@ typedef struct {
    EdgeWeight weight;
 } GraphEdge deriving (Bits, Eq);
 
+typedef struct {
+   NodeID id;
+} GraphNodeReq deriving(Bits, Eq);
+
+typedef struct {
+   EdgePtr id;
+} GraphEdgeReq deriving(Bits, Eq);
+
+typedef struct {
+   NodeID id;
+   NodePayload cmpVal;
+   NodePayload swapVal;
+} GraphCASReq deriving(Bits, Eq);
+
 typedef union tagged {
    struct {
       NodeID id;
@@ -41,6 +55,19 @@ typedef union tagged {
    } CAS;
    
 } GraphReq deriving(Bits, Eq);
+
+typedef struct {
+   GraphNode node;
+} GraphNodeResp deriving(Bits, Eq);
+
+typedef struct {
+   GraphEdge gedge;
+} GraphEdgeResp deriving(Bits, Eq);
+
+typedef struct {
+   Bool success;
+   NodePayload oldVal;
+} GraphCASResp deriving(Bits, Eq);
 
 typedef union tagged {
    struct {

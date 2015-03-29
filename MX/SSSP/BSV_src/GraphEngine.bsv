@@ -21,10 +21,25 @@ import BC_Transactors     :: *;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 import GraphLanePipe::*;
+import GraphNodePipe::*;
+import GraphEdgePipe::*;
+import GraphCASPipe::*;
+
+interface GraphEngineReq;
+    interface Vector#(2, Put#(GraphNodeReq)) nodeReq;
+    interface Vector#(1, Put#(GraphEdgeReq)) edgeReq;
+    interface Vector#(1, Put#(GraphCASReq)) casReq;
+endinterface
+
+interface GraphEngineResp;
+    interface Vector#(2, Get#(GraphNodeResp)) nodeResp;
+    interface Vector#(1, Get#(GraphEdgeResp)) edgeResp;
+    interface Vector#(1, Get#(GraphCASResp)) casResp;
+endinterface
 
 interface GraphEngine;
-    interface Vector#(`GRAPH_PORTS, Put#(GraphReq)) req;
-    interface Vector#(`GRAPH_PORTS, Get#(GraphResp)) resp;
+    interface Vector#(`GRAPH_PORTS, GraphEngineReq) req;
+    interface Vector#(`GRAPH_PORTS, GraphEngineResp) resp;
     interface Vector#(16, Get#(MemReq)) memReq;
     interface Vector#(16, Put#(MemResp)) memResp;
 
@@ -45,15 +60,98 @@ module mkGraphEngine(GraphEngine);
     Vector#(16, Reg#(BC_Addr)) edgePtr_staging2 <- replicateM(mkRegU);
 
     Vector#(`GRAPH_PORTS, FIFOF#(GraphResp)) respQ <- replicateM(mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT));
+    Vector#(16, FIFOF#(MemReq)) memReqQ <- replicateM(mkFIFOF);
+    Vector#(16, FIFOF#(MemResp)) memRespQ <- replicateM(mkFIFOF);
+
+    Vector#(16, Vector#(2, GraphNodeIfc)) nodePipes = ?;
+    Vector#(16, Vector#(1, GraphEdgeIfc)) edgePipes = ?;
+    Vector#(16, Vector#(1, GraphCASIfc)) casPipes = ?;
+    for(Integer i = 0; i < 16; i= i+1) begin
+        nodePipes[i][0] <- mkGraphNodePipe(0, 1);
+        nodePipes[i][1] <- mkGraphNodePipe(2, 3);
+        edgePipes[i][0] <- mkGraphEdgePipe(4);
+        casPipes[i][0]  <- mkGraphCASPipe(5);
+    end
     
-    Vector#(16, GraphLane) pipes <- replicateM(mkGraphLanePipe);
-
-    function Put#(GraphReq) genReq(Integer i) = pipes[i].req;
-    function Get#(GraphResp) genResp(Integer i) = pipes[i].resp;
-    function Get#(MemReq) genMemReq(Integer i) = pipes[i].memReq;
-    function Put#(MemResp) genMemResp(Integer i) = pipes[i].memResp;
-
-
+    Vector#(16, Vector#(2, Put#(GraphNodeReq))) nodeReq_tmp = ?;
+    Vector#(16, Vector#(1, Put#(GraphEdgeReq))) edgeReq_tmp = ?;
+    Vector#(16, Vector#(1, Put#(GraphCASReq))) casReq_tmp = ?;
+    for(int i = 0; i < 16; i=i+1) begin
+        for(int j = 0; j < 2; j=j+1)
+            nodeReq_tmp[i][j] = nodePipes[i][j].req;
+        for(int j = 0; j < 1; j=j+1)
+            edgeReq_tmp[i][j] = edgePipes[i][j].req;
+        for(int j = 0; j < 1; j=j+1)
+            casReq_tmp[i][j] = casPipes[i][j].req;
+    end
+    
+    function GraphEngineReq genReq(Integer i);
+        return interface GraphEngineReq;
+        interface nodeReq = nodeReq_tmp[i];
+        interface edgeReq = edgeReq_tmp[i];
+        interface casReq = casReq_tmp[i];
+        endinterface;
+    endfunction
+    
+    
+    Vector#(16, Vector#(2, Get#(GraphNodeResp))) nodeResp_tmp = ?;
+    Vector#(16, Vector#(1, Get#(GraphEdgeResp))) edgeResp_tmp = ?;
+    Vector#(16, Vector#(1, Get#(GraphCASResp))) casResp_tmp = ?;
+    for(int i = 0; i < 16; i=i+1) begin
+        for(int j = 0; j < 2; j=j+1)
+            nodeResp_tmp[i][j] = nodePipes[i][j].resp;
+        for(int j = 0; j < 1; j=j+1)
+            edgeResp_tmp[i][j] = edgePipes[i][j].resp;
+        for(int j = 0; j < 1; j=j+1)
+            casResp_tmp[i][j] = casPipes[i][j].resp;
+    end
+    
+    function GraphEngineResp genResp(Integer i);
+        return interface GraphEngineResp;
+        interface nodeResp = nodeResp_tmp[i];
+        interface edgeResp = edgeResp_tmp[i];
+        interface casResp = casResp_tmp[i];
+        endinterface;
+    endfunction
+    
+    for(Integer i = 0; i < 16; i=i+1) begin
+        (* descending_urgency = "pipesToMemNode0, pipesToMemNode1, pipesToMemEdge0, pipesToMemCAS0" *)
+        rule pipesToMemNode0;
+            let pkt <- nodePipes[i][0].memReq.get();
+            memReqQ[i].enq(pkt);
+        endrule
+        rule pipesToMemNode1;
+            let pkt <- nodePipes[i][1].memReq.get();
+            memReqQ[i].enq(pkt);
+        endrule
+        rule pipesToMemEdge0;
+            let pkt <- edgePipes[i][0].memReq.get();
+            memReqQ[i].enq(pkt);
+        endrule
+        rule pipesToMemCAS0;
+            let pkt <- casPipes[i][0].memReq.get();
+            memReqQ[i].enq(pkt);
+        endrule
+        
+        rule memToPipes;
+            MemResp resp = memRespQ[i].first();
+            memRespQ[i].deq();
+            
+            if(resp.gaddr.addr == 0)
+                nodePipes[i][0].memResps[0].put(resp);
+            else if(resp.gaddr.addr == 1)
+                nodePipes[i][0].memResps[1].put(resp);
+            else if(resp.gaddr.addr == 2)
+                nodePipes[i][1].memResps[0].put(resp);
+            else if(resp.gaddr.addr == 3)
+                nodePipes[i][1].memResps[1].put(resp);
+            else if(resp.gaddr.addr == 4)
+                edgePipes[i][0].memResp.put(resp);
+            else if(resp.gaddr.addr == 5)
+                casPipes[i][0].memResp.put(resp);
+        endrule
+    end
+    
     let fsm <- mkFSM(
        seq
            action
@@ -77,7 +175,13 @@ module mkGraphEngine(GraphEngine);
            action
                for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
                    action
-                     pipes[i].init(fpgaId_staging2[i], fromInteger(i), nodePtr_staging2[i], edgePtr_staging2[i]);
+                     for(Integer j = 0; j < 2; j=j+1)
+                         nodePipes[i][j].init(fpgaId_staging2[i], fromInteger(i), nodePtr_staging2[i]);
+                     for(Integer j = 0; j < 1; j=j+1)
+                         edgePipes[i][j].init(fpgaId_staging2[i], fromInteger(i), edgePtr_staging2[i]);
+                     for(Integer j = 0; j < 1; j=j+1)
+                         casPipes[i][j].init(fpgaId_staging2[i], fromInteger(i), nodePtr_staging2[i]);
+                         
                    endaction
                endaction
            endaction
@@ -102,8 +206,8 @@ module mkGraphEngine(GraphEngine);
     
     interface req = genWith(genReq);
     interface resp = genWith(genResp);
-    interface memReq = genWith(genMemReq);
-    interface memResp = genWith(genMemResp);
+    interface memReq = map(toGet, memReqQ);
+    interface memResp = map(toPut, memRespQ);
 endmodule
 
 endpackage

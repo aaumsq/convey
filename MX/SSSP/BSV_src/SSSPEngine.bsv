@@ -32,8 +32,12 @@ interface Engine;
     interface Put#(WLEntry) workIn;
     interface Get#(WLEntry) workOut;
 
-    interface Get#(GraphReq) graphReq;
-    interface Put#(GraphResp) graphResp;
+    interface Vector#(2, Get#(GraphNodeReq)) graphNodeReqs;
+    interface Vector#(1, Get#(GraphEdgeReq)) graphEdgeReqs;
+    interface Vector#(1, Get#(GraphCASReq)) graphCASReqs;
+    interface Vector#(2, Put#(GraphNodeResp)) graphNodeResps;
+    interface Vector#(1, Put#(GraphEdgeResp)) graphEdgeResps;
+    interface Vector#(1, Put#(GraphCASResp)) graphCASResps;
 endinterface
 
 (* synthesize, descending_urgency = "casDone, cas, deqCasStall, recvDestNode, casRetry, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
@@ -46,9 +50,12 @@ module mkSSSPEngine(Engine ifc);
     FIFOF#(WLEntry) workInQ <- mkFIFOF;
     FIFOF#(WLEntry) workOutQ <- mkFIFOF;
     
-    FIFOF#(GraphReq) graphReqQ <- mkSizedFIFOF(2);
-    FIFOF#(GraphResp) graphRespQ <- mkSizedFIFOF(2);
-    Vector#(4, CreditFIFOF#(GraphReq, GraphResp)) graphQs <- replicateM(mkCreditFIFOF(`SSSPENGINE_NUM_IN_FLIGHT));
+    Vector#(2, FIFOF#(GraphNodeReq)) graphNodeReqQs <- replicateM(mkFIFOF);
+    Vector#(1, FIFOF#(GraphEdgeReq)) graphEdgeReqQs <- replicateM(mkFIFOF);
+    Vector#(1, FIFOF#(GraphCASReq)) graphCASReqQs <- replicateM(mkFIFOF);
+    Vector#(2, FIFOF#(GraphNodeResp)) graphNodeRespQs <- replicateM(mkFIFOF);
+    Vector#(1, FIFOF#(GraphEdgeResp)) graphEdgeRespQs <- replicateM(mkFIFOF);
+    Vector#(1, FIFOF#(GraphCASResp)) graphCASRespQs <- replicateM(mkFIFOF);
     
     FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(2);
     FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT);  // # entries = # edgeReq in flight
@@ -80,7 +87,7 @@ module mkSSSPEngine(Engine ifc);
         end
         return ret;
     endfunction
-    
+    /*
     rule printFIFOFulls;
  //       if(fpgaId == 0 && laneId==0) begin
         let cycle <- cur_cycle;
@@ -95,7 +102,7 @@ module mkSSSPEngine(Engine ifc);
             
    //     end
     endrule
-    
+    */
     rule calcDone;
         Bool workEmpty = !workInQ.notEmpty && !workOutQ.notEmpty;
         
@@ -110,54 +117,6 @@ module mkSSSPEngine(Engine ifc);
         end
     endrule
     
-    rule reqQ_distribute;
-        function Bool notEmptyF(Integer x) = graphQs[x].req.notEmpty;
-        function Bool isTrue(Bool x) = x;
-        Vector#(4, Bool) readies = genWith(notEmptyF);
-        let f = findIndex(isTrue, readies);
-        if(f matches tagged Valid .idx) begin
-            graphReqQ.enq(graphQs[idx].req.first);
-            graphQs[idx].req.deq();
-            if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d] reqQ[%0d] distributed", cur_cycle, fpgaId, laneId, idx);
-        end
-    endrule
-    
-    rule respQ_distribute;
-        GraphResp resp = graphRespQ.first;
-        graphRespQ.deq();
-        
-        if(resp matches tagged Node .x) begin
-            if(graphQs[x.channel].resp.notFull) begin
-                graphQs[x.channel].resp.enq(resp);
-                //if(`DEBUG) $display("~~~ SSSPEngine GraphResp Node sending to channel %0d", x.channel);
-            end
-            else begin
-                if(`DEBUG) $display("ERROR: SSSPEngine GRAPHQ RESP IS FULL");
-                $finish(1);
-            end
-        end
-        else if(resp matches tagged Edge .x) begin
-            if(graphQs[x.channel].resp.notFull) begin
-                graphQs[x.channel].resp.enq(resp);
-                //if(`DEBUG) $display("~~~ SSSPEngine GraphResp Edge sending to channel %0d", x.channel);
-            end
-            else begin
-                if(`DEBUG) $display("ERROR: SSSPEngine GRAPHQ RESP IS FULL");
-                $finish(1);
-            end
-        end
-        else if(resp matches tagged CAS .x) begin
-            if(graphQs[x.channel].resp.notFull) begin
-                graphQs[x.channel].resp.enq(resp);
-                //if(`DEBUG) $display("~~~ SSSPEngine GraphResp CAS sending to channel %0d", x.channel);
-            end
-            else begin
-                if(`DEBUG) $display("ERROR: SSSPEngine GRAPHQ RESP IS FULL");
-                $finish(1);
-            end
-        end
-    endrule
-    
     rule getSrcNode(started);
         WLEntry pkt = workInQ.first();
         workInQ.deq();
@@ -165,28 +124,23 @@ module mkSSSPEngine(Engine ifc);
         
         if(`DEBUG) $display("%0d: ~~~ SSSPEngine[%0d]: START getSrcNode priority: %0d, nodeID: %0d", cur_cycle, fpgaId, tpl_1(pkt), job);
         
-        graphQs[0].req.enq(tagged ReadNode{id: job, channel: 0});
+        graphNodeReqQs[0].enq(GraphNodeReq{id: job});
         numWorkFetched <= numWorkFetched + 1;
     endrule
     
     rule recvSrcNode;
-        if(graphQs[0].resp.first matches tagged Node .gnode) begin
-            graphQs[0].resp.deq();
-            GraphNode node = gnode.node;
-            graphNodeQ1.enq(node);
-            if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: graphNode ID %0d payload %0d edgePtr %0d numEdges %0d ", cur_cycle, fpgaId, laneId, node.id, node.payload, node.edgePtr, node.numEdges);
-        end
-        else begin
-            if(`DEBUG) $display("ERROR THIS SHOULD NEVER HAPPEN SSSPENGINE 0");
-            $finish(1);
-        end
+        GraphNodeResp nodeResp = graphNodeRespQs[0].first();
+        graphNodeRespQs[0].deq();
+        GraphNode node = nodeResp.node;
+        graphNodeQ1.enq(node);
+        if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: graphNode ID %0d payload %0d edgePtr %0d numEdges %0d ", cur_cycle, fpgaId, laneId, node.id, node.payload, node.edgePtr, node.numEdges);
     endrule
     
     Reg#(NodeNumEdges) edgeIdx <- mkReg(0);
     rule getEdges;
         GraphNode node = graphNodeQ1.first();        
         EdgePtr edgeID = node.edgePtr + edgeIdx;
-        graphQs[1].req.enq(tagged ReadEdge{edgeID: edgeID, channel: 1});
+        graphEdgeReqQs[0].enq(GraphEdgeReq{id: edgeID});
         graphNodeQ2.enq(node);
         if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: getEdges %0d of %0d", cur_cycle, fpgaId, laneId, edgeIdx, node.numEdges-1);
         numEdgesFetched <= numEdgesFetched + 1;
@@ -202,27 +156,21 @@ module mkSSSPEngine(Engine ifc);
     endrule
     
     rule getDestNode;
-        if(graphQs[1].resp.first matches tagged Edge .gedge) begin
-            graphQs[1].resp.deq();
-            
-            GraphNode n = graphNodeQ2.first();
-            graphNodeQ2.deq();
-            
-            GraphEdge e = gedge.gedge;
-            NodePayload newDist = n.payload + e.weight;
-            newDistQ.enq(newDist);
-            if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: getDestNode num %0d", cur_cycle, fpgaId, laneId, e.dest);
-            graphQs[2].req.enq(tagged ReadNode{id: e.dest, channel: 2});
-        end
-        else begin
-            if(`DEBUG) $display("ERROR THIS SHOULD NEVER HAPPEN SSSPENGINE 1");
-            $finish(1);
-        end
+        GraphEdgeResp edgeResp = graphEdgeRespQs[0].first();
+        graphEdgeRespQs[0].deq();
+        
+        GraphNode n = graphNodeQ2.first();
+        graphNodeQ2.deq();
+        
+        GraphEdge e = edgeResp.gedge;
+        NodePayload newDist = n.payload + e.weight;
+        newDistQ.enq(newDist);
+        if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: getDestNode num %0d", cur_cycle, fpgaId, laneId, e.dest);
+        graphNodeReqQs[1].enq(GraphNodeReq{id: e.dest});
     endrule
     
     rule deqCasStall(casStall > 0);
         casStall <= casStall - 1;
-        //$display("   CASStall = %d", casStall);
     endrule        
     
     rule casRetry;
@@ -231,20 +179,16 @@ module mkSSSPEngine(Engine ifc);
     endrule
     
     rule recvDestNode(casNumInFlight.notMax);
-        if(graphQs[2].resp.first matches tagged Node .gnode) begin
-            graphQs[2].resp.deq();
-            GraphNode node = gnode.node;
-            NodePayload newDist = newDistQ.first();
-            newDistQ.deq();
-            if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: recvDestNode, enqueueing CAS: %0d < %0d?", cur_cycle, fpgaId, laneId, newDist, node.payload);
-            // tuple3(cmpVal, newVal, destNode)
-            casContextQ1.enq(tuple3(node.payload, newDist, node));
-            casNumInFlight.inc();
-        end
-        else begin
-            if(`DEBUG) $display("ERROR THIS SHOULD NEVER HAPPEN SSSPENGINE 2");
-            $finish(1);
-        end
+        GraphNodeResp nodeResp = graphNodeRespQs[1].first();
+        graphNodeRespQs[1].deq();
+        
+        GraphNode node = nodeResp.node;
+        NodePayload newDist = newDistQ.first();
+        newDistQ.deq();
+        if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: recvDestNode, enqueueing CAS: %0d < %0d?", cur_cycle, fpgaId, laneId, newDist, node.payload);
+        // tuple3(cmpVal, newVal, destNode)
+        casContextQ1.enq(tuple3(node.payload, newDist, node));
+        casNumInFlight.inc();
     endrule
     
     rule cas;
@@ -254,7 +198,7 @@ module mkSSSPEngine(Engine ifc);
         if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: Attempting CAS...", cur_cycle, fpgaId, laneId);
         if(tpl_2(cxt) < tpl_1(cxt)) begin
             if(`DEBUG) $display("   %d < %d, executing CAS!", tpl_2(cxt), tpl_1(cxt));
-            graphQs[3].req.enq(tagged CAS{id: tpl_3(cxt).id, cmpVal: tpl_1(cxt), swapVal: tpl_2(cxt), channel: 3});
+            graphCASReqQs[0].enq(GraphCASReq{id: tpl_3(cxt).id, cmpVal: tpl_1(cxt), swapVal: tpl_2(cxt)});
             casContextQ2.enq(cxt);
             numCASIssued <= numCASIssued + 1;
         end
@@ -265,37 +209,32 @@ module mkSSSPEngine(Engine ifc);
     endrule
     
     rule casDone;
-        if(graphQs[3].resp.first matches tagged CAS .cas) begin
-            graphQs[3].resp.deq();
-            
-            // tuple3(cmpVal, newVal, destNode)
-            Tuple3#(NodePayload, NodePayload, GraphNode) cxt = casContextQ2.first();
-            casContextQ2.deq();
-            
-            if(cas.success) begin
-                GraphNode node = tpl_3(cxt);
-                WLEntry newWork = tuple2(0, node.id);
-                workOutQ.enq(newWork);
-                if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Num retired: %0d, num discarded: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, fshow(newWork));
-                else begin
-                    if(numEdgesDiscarded % 1024 == 0) begin
-                        $display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Edges retired: %0d, edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, numCASIssued, numCASRetried, fshow(newWork));
-                    end
-                end
-                numEdgesRetired <= numEdgesRetired + 1;
-                casNumInFlight.dec2();
-            end
+        GraphCASResp casResp = graphCASRespQs[0].first();
+        graphCASRespQs[0].deq();
+        
+        // tuple3(cmpVal, newVal, destNode)
+        Tuple3#(NodePayload, NodePayload, GraphNode) cxt = casContextQ2.first();
+        casContextQ2.deq();
+        
+        if(casResp.success) begin
+            GraphNode node = tpl_3(cxt);
+            WLEntry newWork = tuple2(0, node.id);
+            workOutQ.enq(newWork);
+            if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Num retired: %0d, num discarded: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, fshow(newWork));
             else begin
-                casContextRetryQ.enq(tuple3(cas.oldVal, tpl_2(cxt), tpl_3(cxt)));
-                //casStall <= lfsr.value() >> 2;
-                //lfsr.next();
-                numCASRetried <= numCASRetried + 1;
-                //$display("%0d: SSSPEngine[%0d][%0d]: CAS failed, retry...", cur_cycle, fpgaId, laneId);
+                if(numEdgesDiscarded % 1024 == 0) begin
+                    $display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Edges retired: %0d, edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, numCASIssued, numCASRetried, fshow(newWork));
+                end
             end
+            numEdgesRetired <= numEdgesRetired + 1;
+            casNumInFlight.dec2();
         end
         else begin
-            if(`DEBUG) $display("ERROR THIS SHOULD NEVER HAPPEN SSSPENGINE 2");
-            //$finish(1);
+            casContextRetryQ.enq(tuple3(casResp.oldVal, tpl_2(cxt), tpl_3(cxt)));
+            //casStall <= lfsr.value() >> 2;
+            //lfsr.next();
+            numCASRetried <= numCASRetried + 1;
+            //$display("%0d: SSSPEngine[%0d][%0d]: CAS failed, retry...", cur_cycle, fpgaId, laneId);
         end
     endrule
     
@@ -307,10 +246,6 @@ module mkSSSPEngine(Engine ifc);
         
         //lfsr.seed({2'b0, fpgaid, laneid});
         casStall <= 0;
-        
-        for(Integer i = 0; i < 4; i=i+1) begin
-            graphQs[i].init(fpgaid, laneid, fromInteger(i));
-        end
         casNumInFlight.init(`SSSPENGINE_NUM_IN_FLIGHT);
         
         numWorkFetched <= 0;
@@ -333,8 +268,12 @@ module mkSSSPEngine(Engine ifc);
     
     interface workIn = toPut(workInQ);
     interface workOut = toGet(workOutQ);
-    interface graphReq = toGet(graphReqQ);
-    interface graphResp = toPut(graphRespQ);
+    interface graphNodeReqs = map(toGet, graphNodeReqQs);
+    interface graphEdgeReqs = map(toGet, graphEdgeReqQs);
+    interface graphCASReqs = map(toGet, graphCASReqQs);
+    interface graphNodeResps = map(toPut, graphNodeRespQs);
+    interface graphEdgeResps = map(toPut, graphEdgeRespQs);
+    interface graphCASResps = map(toPut, graphCASRespQs);
 endmodule
 
 endpackage

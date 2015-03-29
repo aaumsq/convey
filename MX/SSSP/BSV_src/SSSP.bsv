@@ -78,7 +78,7 @@ module mkSSSP(BC_HW2_IFC);
     Reset rst <- exposeCurrentReset;
     
     Vector#(16, MakeResetIfc) engineRsts <- replicateM(mkReset(1, False, clk));
-    MakeResetIfc graphRst<- mkReset(1, False, clk);
+    MakeResetIfc graphRst <- mkReset(1, False, clk);
     MakeResetIfc worklistRst <- mkReset(1, False, clk);
     
     Vector#(16, FIFOF#(BC_MC_REQ)) memReqQ  <- replicateM(mkFIFOF);
@@ -145,8 +145,21 @@ module mkSSSP(BC_HW2_IFC);
         mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
         mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
         
-        mkConnection(engines[i].graphReq, graph.req[i]);
-        mkConnection(graph.resp[i], engines[i].graphResp);
+        for(Integer j = 0; j < 2; j=j+1)
+            mkConnection(engines[i].graphNodeReqs[j], graph.req[i].nodeReq[j]);
+        for(Integer j = 0; j < 1; j=j+1)
+            mkConnection(engines[i].graphEdgeReqs[j], graph.req[i].edgeReq[j]);
+        for(Integer j = 0; j < 1; j=j+1)
+            mkConnection(engines[i].graphCASReqs[j], graph.req[i].casReq[j]);
+        
+        for(Integer j = 0; j < 2; j=j+1)
+            mkConnection(graph.resp[i].nodeResp[j], engines[i].graphNodeResps[j]);
+        for(Integer j = 0; j < 1; j=j+1)
+            mkConnection(graph.resp[i].edgeResp[j], engines[i].graphEdgeResps[j]);
+        for(Integer j = 0; j < 1; j=j+1)
+            mkConnection(graph.resp[i].casResp[j], engines[i].graphCASResps[j]);
+        //mkConnection(engines[i].graphReq, graph.req[i]);
+        //mkConnection(graph.resp[i], engines[i].graphResp);
         
         mkConnection(graph.memReq[i], toPut(graphOutQs[i]));
         mkConnection(toGet(graphInQs[i]), graph.memResp[i]);
