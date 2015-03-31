@@ -95,10 +95,9 @@ typedef Tuple2#(Bool, WLEntry) WLSpillResp; // True = Read, False = Write
 
 typedef enum {
    MK_SSSP = 0,
-   MK_ENGINE = 1,
-   MK_WORKLIST = 2,
-   MK_GRAPH = 3,
-   IGNORE = 4
+   MK_WORKLIST = 1,
+   MK_GRAPH = 2,
+   IGNORE = 3
 } GaloisModule deriving(Bits, Eq);
 
 typedef struct {

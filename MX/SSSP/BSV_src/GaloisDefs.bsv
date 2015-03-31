@@ -1,11 +1,12 @@
 `ifndef _GALOIS_DEFS_
 `define _GALOIS_DEFS_
-`define WL_ENGINE_PORTS 16
-`define WL_LG_ENGINE_PORTS 4
+
+`define NUM_ENGINES 8
+`define LG_NUM_ENGINES 3
+
 `define WL_SPILL_PORTS 16
 `define WL_WLFIFO_SIZE 1024
 
-`define GRAPH_PORTS 16
 `define GRAPH_NUM_IN_FLIGHT 16
 
 `define LG_GRAPH_NODE_SIZE 4

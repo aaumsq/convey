@@ -38,8 +38,8 @@ interface GraphEngineResp;
 endinterface
 
 interface GraphEngine;
-    interface Vector#(`GRAPH_PORTS, GraphEngineReq) req;
-    interface Vector#(`GRAPH_PORTS, GraphEngineResp) resp;
+    interface Vector#(`NUM_ENGINES, GraphEngineReq) req;
+    interface Vector#(`NUM_ENGINES, GraphEngineResp) resp;
     interface Vector#(16, Get#(MemReq)) memReq;
     interface Vector#(16, Put#(MemResp)) memResp;
 
@@ -52,31 +52,30 @@ module mkGraphEngine(GraphEngine);
     Reg#(BC_AEId) fpgaId <- mkRegU;
     Reg#(BC_Addr) nodePtr <- mkRegU;
     Reg#(BC_Addr) edgePtr <- mkRegU;
-    Vector#(16, Reg#(BC_AEId)) fpgaId_staging <- replicateM(mkRegU);
-    Vector#(16, Reg#(BC_Addr)) nodePtr_staging <- replicateM(mkRegU);
-    Vector#(16, Reg#(BC_Addr)) edgePtr_staging <- replicateM(mkRegU);
-    Vector#(16, Reg#(BC_AEId)) fpgaId_staging2 <- replicateM(mkRegU);
-    Vector#(16, Reg#(BC_Addr)) nodePtr_staging2 <- replicateM(mkRegU);
-    Vector#(16, Reg#(BC_Addr)) edgePtr_staging2 <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, Reg#(BC_AEId)) fpgaId_staging <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, Reg#(BC_Addr)) nodePtr_staging <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, Reg#(BC_Addr)) edgePtr_staging <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, Reg#(BC_AEId)) fpgaId_staging2 <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, Reg#(BC_Addr)) nodePtr_staging2 <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, Reg#(BC_Addr)) edgePtr_staging2 <- replicateM(mkRegU);
 
-    Vector#(`GRAPH_PORTS, FIFOF#(GraphResp)) respQ <- replicateM(mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT));
     Vector#(16, FIFOF#(MemReq)) memReqQ <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(MemResp)) memRespQ <- replicateM(mkFIFOF);
 
-    Vector#(16, Vector#(2, GraphNodeIfc)) nodePipes = ?;
-    Vector#(16, Vector#(1, GraphEdgeIfc)) edgePipes = ?;
-    Vector#(16, Vector#(1, GraphCASIfc)) casPipes = ?;
-    for(Integer i = 0; i < 16; i= i+1) begin
+    Vector#(`NUM_ENGINES, Vector#(2, GraphNodeIfc)) nodePipes = ?;
+    Vector#(`NUM_ENGINES, Vector#(1, GraphEdgeIfc)) edgePipes = ?;
+    Vector#(`NUM_ENGINES, Vector#(1, GraphCASIfc)) casPipes = ?;
+    for(Integer i = 0; i < `NUM_ENGINES; i= i+1) begin
         nodePipes[i][0] <- mkGraphNodePipe(0, 1);
         nodePipes[i][1] <- mkGraphNodePipe(2, 3);
         edgePipes[i][0] <- mkGraphEdgePipe(4);
         casPipes[i][0]  <- mkGraphCASPipe(5);
     end
     
-    Vector#(16, Vector#(2, Put#(GraphNodeReq))) nodeReq_tmp = ?;
-    Vector#(16, Vector#(1, Put#(GraphEdgeReq))) edgeReq_tmp = ?;
-    Vector#(16, Vector#(1, Put#(GraphCASReq))) casReq_tmp = ?;
-    for(int i = 0; i < 16; i=i+1) begin
+    Vector#(`NUM_ENGINES, Vector#(2, Put#(GraphNodeReq))) nodeReq_tmp = ?;
+    Vector#(`NUM_ENGINES, Vector#(1, Put#(GraphEdgeReq))) edgeReq_tmp = ?;
+    Vector#(`NUM_ENGINES, Vector#(1, Put#(GraphCASReq))) casReq_tmp = ?;
+    for(int i = 0; i < `NUM_ENGINES; i=i+1) begin
         for(int j = 0; j < 2; j=j+1)
             nodeReq_tmp[i][j] = nodePipes[i][j].req;
         for(int j = 0; j < 1; j=j+1)
@@ -94,10 +93,10 @@ module mkGraphEngine(GraphEngine);
     endfunction
     
     
-    Vector#(16, Vector#(2, Get#(GraphNodeResp))) nodeResp_tmp = ?;
-    Vector#(16, Vector#(1, Get#(GraphEdgeResp))) edgeResp_tmp = ?;
-    Vector#(16, Vector#(1, Get#(GraphCASResp))) casResp_tmp = ?;
-    for(int i = 0; i < 16; i=i+1) begin
+    Vector#(`NUM_ENGINES, Vector#(2, Get#(GraphNodeResp))) nodeResp_tmp = ?;
+    Vector#(`NUM_ENGINES, Vector#(1, Get#(GraphEdgeResp))) edgeResp_tmp = ?;
+    Vector#(`NUM_ENGINES, Vector#(1, Get#(GraphCASResp))) casResp_tmp = ?;
+    for(int i = 0; i < `NUM_ENGINES; i=i+1) begin
         for(int j = 0; j < 2; j=j+1)
             nodeResp_tmp[i][j] = nodePipes[i][j].resp;
         for(int j = 0; j < 1; j=j+1)
@@ -114,8 +113,8 @@ module mkGraphEngine(GraphEngine);
         endinterface;
     endfunction
     
-    for(Integer i = 0; i < 16; i=i+1) begin
-        (* descending_urgency = "pipesToMemNode0, pipesToMemNode1, pipesToMemEdge0, pipesToMemCAS0" *)
+    for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
+        (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1, pipesToMemNode0" *)
         rule pipesToMemNode0;
             let pkt <- nodePipes[i][0].memReq.get();
             memReqQ[i].enq(pkt);
@@ -155,7 +154,7 @@ module mkGraphEngine(GraphEngine);
     let fsm <- mkFSM(
        seq
            action
-               for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
+               for(Integer i = 0; i < `NUM_ENGINES; i = i+1) action
                    action
                      fpgaId_staging[i] <= fpgaId;
                      nodePtr_staging[i] <= nodePtr;
@@ -164,7 +163,7 @@ module mkGraphEngine(GraphEngine);
                endaction
            endaction
            action
-               for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
+               for(Integer i = 0; i < `NUM_ENGINES; i = i+1) action
                    action
                      fpgaId_staging2[i] <= fpgaId_staging[i];
                      nodePtr_staging2[i] <= nodePtr_staging[i];
@@ -173,7 +172,7 @@ module mkGraphEngine(GraphEngine);
                endaction
            endaction
            action
-               for(Integer i = 0; i < `GRAPH_PORTS; i = i+1) action
+               for(Integer i = 0; i < `NUM_ENGINES; i = i+1) action
                    action
                      for(Integer j = 0; j < 2; j=j+1)
                          nodePipes[i][j].init(fpgaId_staging2[i], fromInteger(i), nodePtr_staging2[i]);

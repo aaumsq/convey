@@ -27,11 +27,11 @@ import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
 interface Worklist;
-    interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) enq;
-    interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) deq;
+    interface Vector#(`NUM_ENGINES, Put#(WLEntry)) enq;
+    interface Vector#(`NUM_ENGINES, Get#(WLEntry)) deq;
     
-    interface Vector#(`WL_ENGINE_PORTS, Get#(MemReq)) memReq;
-    interface Vector#(`WL_ENGINE_PORTS, Put#(MemResp)) memResp;
+    interface Vector#(16, Get#(MemReq)) memReq;
+    interface Vector#(16, Put#(MemResp)) memResp;
     
     method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
     method Bool isDone();
@@ -41,24 +41,21 @@ endinterface
 (* synthesize *)
 module mkWorklistFIFO(Worklist);
     
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) enqQs <- replicateM(mkFIFOF);
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) deqQs <- replicateM(mkFIFOF);
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) stealQs <- replicateM(mkSizedWireFIFOF(2));
-    Vector#(`WL_ENGINE_PORTS, Reg#(Bool)) reqSteals <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) enqQs <- replicateM(mkFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) deqQs <- replicateM(mkFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) stealQs <- replicateM(mkSizedWireFIFOF(2));
+    Vector#(`NUM_ENGINES, Reg#(Bool)) reqSteals <- replicateM(mkRegU);
     
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) engineQs <- replicateM(mkSizedBufBRAMFIFOF(1024));
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) engineQs <- replicateM(mkSizedBufBRAMFIFOF(1024));
     
-    Vector#(`WL_ENGINE_PORTS, PulseWire) stealQDeqs <- replicateM(mkPulseWire);
-    Vector#(`WL_ENGINE_PORTS, RWire#(WLEntry)) stealQEnqs <- replicateM(mkRWire);
-    
-    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) noEnqs <- mkRegU;
-    Reg#(Vector#(`WL_ENGINE_PORTS, Bool)) engineEmpties <- mkRegU;
+    Reg#(Vector#(`NUM_ENGINES, Bool)) noEnqs <- mkRegU;
+    Reg#(Vector#(`NUM_ENGINES, Bool)) engineEmpties <- mkRegU;
     Reg#(Bool) done <- mkReg(False);
     Reg#(Bool) started <- mkReg(False);
     
     WLEngine engine <- mkWLEngine();
     
-    Vector#(`WL_ENGINE_PORTS, Wire#(Bool)) enqValid <- replicateM(mkDWire(False));
+    Vector#(`NUM_ENGINES, Wire#(Bool)) enqValid <- replicateM(mkDWire(False));
 
     rule calcDone(started);
         function Bool enqF(Integer x) = !enqValid[x];
@@ -74,14 +71,14 @@ module mkWorklistFIFO(Worklist);
         function Bool isTrue(Bool x) = x;
         function Bool stealsF(Integer x) = reqSteals[x];
         function Bool engineF(Integer x) = engineQs[x].notEmpty;
-        Vector#(`WL_ENGINE_PORTS, Bool) steals = genWith(stealsF);
-        Vector#(`WL_ENGINE_PORTS, Bool) engines = genWith(engineF);
+        Vector#(`NUM_ENGINES, Bool) steals = genWith(stealsF);
+        Vector#(`NUM_ENGINES, Bool) engines = genWith(engineF);
         if(any(isTrue, steals)) begin
             if(`DEBUG) $display("steals: %b, engineQs: %b", steals, engines);
         end
     endrule
     
-    for(Integer i = 0; i < `WL_ENGINE_PORTS; i = i + 1) begin
+    for(Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
         (* descending_urgency = "processEnq, processFill, engineFull" *)
         rule engineFull(started);
             if(!engineQs[i].notFull) begin
@@ -103,7 +100,7 @@ module mkWorklistFIFO(Worklist);
             enqQs[i].deq();
             enqValid[i] <= True;
             Integer stealIdx = ?;
-            if(i == `WL_ENGINE_PORTS-1)
+            if(i == `NUM_ENGINES-1)
                 stealIdx = 0;
             else
                 stealIdx = i + 1;
@@ -145,7 +142,7 @@ module mkWorklistFIFO(Worklist);
         done <= False;
         started <= True;
         
-        for(Integer i = 0; i < `WL_ENGINE_PORTS; i=i+1) begin
+        for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
             reqSteals[i] <= False;
         end
     endmethod

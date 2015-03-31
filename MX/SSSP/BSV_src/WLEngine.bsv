@@ -24,8 +24,8 @@ import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
 interface WLEngine;
-    interface Vector#(`WL_ENGINE_PORTS, Put#(WLEntry)) streamIn;
-    interface Vector#(`WL_ENGINE_PORTS, Get#(WLEntry)) streamOut;
+    interface Vector#(`NUM_ENGINES, Put#(WLEntry)) streamIn;
+    interface Vector#(`NUM_ENGINES, Get#(WLEntry)) streamOut;
 
     interface Vector#(16, Get#(MemReq)) memReq;
     interface Vector#(16, Put#(MemResp)) memResp;
@@ -35,7 +35,6 @@ interface WLEngine;
 endinterface
 
 
-`define WLENGINE_NUM_BUFS 2
 `define WLENGINE_BUFOUT_SIZE 512
 `define WLENGINE_BUFIN_SIZE 512
 `define WLENTRY_SIZE 8
@@ -65,41 +64,41 @@ module mkWLEngine(WLEngine);
     Reg#(Bool) started <- mkReg(False);
     Reg#(Bool) done <- mkReg(False);
     
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) reqQ <- replicateM(mkFIFOF);
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) respQ <- replicateM(mkFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) reqQ <- replicateM(mkFIFOF);
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) respQ <- replicateM(mkFIFOF);
     
     Vector#(16, FIFOF#(MemReq)) memReqQ <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(MemResp)) memRespQ <- replicateM(mkFIFOF);
     
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn0 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
-    Vector#(`WL_ENGINE_PORTS, FIFOF#(WLEntry)) bufIn1 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
-    Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(1))) curBufIn <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) bufIn0 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
+    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) bufIn1 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
+    Vector#(`NUM_ENGINES, Reg#(Bit#(1))) curBufIn <- replicateM(mkRegU);
 
-    Vector#(`WL_ENGINE_PORTS, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBufBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
-    Vector#(`WL_ENGINE_PORTS, Reg#(Bit#(1))) curBufOut <- replicateM(mkRegU);
+    Vector#(`NUM_ENGINES, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBufBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
+    Vector#(`NUM_ENGINES, Reg#(Bit#(1))) curBufOut <- replicateM(mkRegU);
 
 
     Wire#(Bool) bufInValid <- mkDWire(False);
-    Wire#(Bit#(`WL_LG_ENGINE_PORTS)) bufInWriteIdxW <- mkDWire(?);
+    Wire#(Bit#(`LG_NUM_ENGINES)) bufInWriteIdxW <- mkDWire(?);
     Wire#(Bit#(1)) bufInWriteBufW <- mkDWire(?);
     
     (* no_implicit_conditions *)
     rule setWires;
         function Bool bufInEmptyF0(Integer x) = !bufIn0[x].notEmpty;
         function Bool bufInEmptyF1(Integer x) = !bufIn1[x].notEmpty;
-        Vector#(`WL_ENGINE_PORTS, Bool) bufInEmpties0 = genWith(bufInEmptyF0);
-        Vector#(`WL_ENGINE_PORTS, Bool) bufInEmpties1 = genWith(bufInEmptyF1);
+        Vector#(`NUM_ENGINES, Bool) bufInEmpties0 = genWith(bufInEmptyF0);
+        Vector#(`NUM_ENGINES, Bool) bufInEmpties1 = genWith(bufInEmptyF1);
         let elem0 = findElem(True, bufInEmpties0);
         let elem1 = findElem(True, bufInEmpties1);
         if(isValid(elem0)) begin
-            Bit#(`WL_LG_ENGINE_PORTS) idx = pack(fromMaybe(?, elem0));
+            Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem0));
             //$display("BufInEmpties: %b, Empty idx: %0d", bufInEmpties0, idx);
             bufInWriteIdxW <= idx;
             bufInWriteBufW <= 0;
             bufInValid <= True;
         end
         else if(isValid(elem1)) begin
-            Bit#(`WL_LG_ENGINE_PORTS) idx = pack(fromMaybe(?, elem1));
+            Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem1));
             //$display("BufInEmpties: %b, Empty idx: %0d", idx);
             bufInWriteIdxW <= idx;
             bufInWriteBufW <= 1;
@@ -169,7 +168,7 @@ module mkWLEngine(WLEngine);
     
     // Write FSM: Writes all full buffers
     FIFOF#(Bit#(5)) writeFSM_writeQ <- mkSizedFIFOF(16);
-    Reg#(Bit#(`WL_LG_ENGINE_PORTS)) writeFSM_curIdx <- mkRegU;
+    Reg#(Bit#(`LG_NUM_ENGINES)) writeFSM_curIdx <- mkRegU;
     Reg#(Bit#(1)) writeFSM_curBufIdx <- mkRegU;
     Reg#(Bool) writeFSM_done <- mkRegU;
     Reg#(BC_Addr) writeFSM_wlSize <- mkRegU;
@@ -223,7 +222,7 @@ module mkWLEngine(WLEngine);
                    end
                    else begin
                        if(`DEBUG) $display("mkWLEngine WriteFSM done with idx %0d", writeFSM_curIdx);
-                       if(writeFSM_curIdx != fromInteger(`WL_ENGINE_PORTS-1)) begin
+                       if(writeFSM_curIdx != fromInteger(`NUM_ENGINES-1)) begin
                            writeFSM_curIdx <= writeFSM_curIdx + 1;
                            if(`DEBUG) $display("mkWLEngine WriteFSM incrementing writeFSM_curIdx: %0d", writeFSM_curIdx+1);
                        end
@@ -269,7 +268,7 @@ module mkWLEngine(WLEngine);
     Reg#(BC_Addr) readFSM_numEntries <- mkRegU;
     Reg#(BC_Addr) readFSM_curEntry <- mkRegU;
     Reg#(Bit#(10)) readFSM_backOff <- mkRegU;
-    Reg#(Bit#(`WL_LG_ENGINE_PORTS)) readFSM_bufIdx <- mkRegU;
+    Reg#(Bit#(`LG_NUM_ENGINES)) readFSM_bufIdx <- mkRegU;
     Reg#(Bit#(1)) readFSM_buf <- mkRegU;
     Reg#(Bool) readFSM_success <- mkRegU;
     CoalescingCounter readFSM_numReads <- mkCCounter;
@@ -408,7 +407,7 @@ module mkWLEngine(WLEngine);
     Reg#(Bit#(1)) triggerWriteFSM_lastIdx <- mkRegU;
     rule triggerWriteFSM(started && writeFSM.done);
         function Bool bufOutFullF(Integer x) = !doubleBufOut[x][writeFSM_curBufIdx].notFull;
-        Vector#(`WL_ENGINE_PORTS, Bool) bufOutFulls = genWith(bufOutFullF);
+        Vector#(`NUM_ENGINES, Bool) bufOutFulls = genWith(bufOutFullF);
         function Bool isTrueF(Bool x) = x;
         if(any(isTrueF, bufOutFulls)) begin
             //$display("WLEngine triggerWriteFSM EngineQs[%0d] full: %0b", writeFSM_curIdx, bufOutFulls);
@@ -433,7 +432,7 @@ module mkWLEngine(WLEngine);
     
 
     
-    for(Integer i = 0; i < `WL_ENGINE_PORTS; i = i + 1) begin
+    for(Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
         
         rule setCurBufIn(started);
             if(((curBufIn[i] == 0) && !bufIn0[i].notEmpty && bufIn1[i].notEmpty) ||
@@ -478,7 +477,7 @@ module mkWLEngine(WLEngine);
         // No readFSM.done since it's constantly triggered whenever any input buffers are empty!
         let cycle <- cur_cycle;
         Bool isDone = True;
-        for(Integer i = 0; i < `WL_ENGINE_PORTS; i=i+1) begin
+        for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
             if(reqQ[i].notEmpty || respQ[i].notEmpty || bufIn0[i].notEmpty || bufIn1[i].notEmpty || doubleBufOut[i][0].notEmpty || doubleBufOut[i][1].notEmpty) begin
                 isDone = False;
             end
@@ -510,7 +509,7 @@ module mkWLEngine(WLEngine);
         writeFSM_curBufIdx <= 0;
         triggerWriteFSM_timeout <= 0;
         
-        for(Integer i = 0; i < `WL_ENGINE_PORTS; i=i+1) begin
+        for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
             curBufIn[i] <= 0;
             curBufOut[i] <= 0;
         end

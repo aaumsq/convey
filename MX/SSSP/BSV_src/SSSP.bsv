@@ -26,7 +26,7 @@ import GraphEngine::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
-`define NUM_ENGINES 16
+`define NUM_ENGINES 8
 `define LG_NUM_ENGINES 4
 `define WATCHDOG_TIMEOUT 5000000000
 //`define WATCHDOG_TIMEOUT 50000000
@@ -77,7 +77,7 @@ module mkSSSP(BC_HW2_IFC);
     Clock clk <- exposeCurrentClock;
     Reset rst <- exposeCurrentReset;
     
-    Vector#(16, MakeResetIfc) engineRsts <- replicateM(mkReset(1, False, clk));
+    Vector#(`NUM_ENGINES, MakeResetIfc) engineRsts <- replicateM(mkReset(1, False, clk));
     MakeResetIfc graphRst <- mkReset(1, False, clk);
     MakeResetIfc worklistRst <- mkReset(1, False, clk);
     
@@ -93,9 +93,6 @@ module mkSSSP(BC_HW2_IFC);
     for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
         engines[i] <- mkSSSPEngine(reset_by engineRsts[i].new_rst);
     end
-    
-    Vector#(`NUM_ENGINES, FIFOF#(MemReq)) engineOutQs <- replicateM(mkFIFOF);
-    Vector#(`NUM_ENGINES, FIFOF#(MemResp)) engineInQs  <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, Reg#(Bit#(64))) engineResults <- replicateM(mkRegU);
     
     Worklist worklist <- mkWorklistFIFO(reset_by worklistRst.new_rst);
@@ -137,13 +134,9 @@ module mkSSSP(BC_HW2_IFC);
         return MemResp{gaddr: unpack(truncate(rsp.rtnctl)), data: rsp.data};
     endfunction
     
-    for(Integer i = 0; i < 16; i = i + 1) begin
-
+    for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
         mkConnection(engines[i].workOut, worklist.enq[i]);
         mkConnection(worklist.deq[i], engines[i].workIn);
-        
-        mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
-        mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
         
         for(Integer j = 0; j < 2; j=j+1)
             mkConnection(engines[i].graphNodeReqs[j], graph.req[i].nodeReq[j]);
@@ -158,30 +151,29 @@ module mkSSSP(BC_HW2_IFC);
             mkConnection(graph.resp[i].edgeResp[j], engines[i].graphEdgeResps[j]);
         for(Integer j = 0; j < 1; j=j+1)
             mkConnection(graph.resp[i].casResp[j], engines[i].graphCASResps[j]);
-        //mkConnection(engines[i].graphReq, graph.req[i]);
-        //mkConnection(graph.resp[i], engines[i].graphResp);
+        
+    end
+    
+    for(Integer i = 0; i < 16; i = i + 1) begin        
+        mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
+        mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
+        
         
         mkConnection(graph.memReq[i], toPut(graphOutQs[i]));
         mkConnection(toGet(graphInQs[i]), graph.memResp[i]);
         
-        rule toMem(doneResetting && (engineOutQs[i].notEmpty || worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty || ssspOutQs[i].notEmpty));
-            if(graphOutQs[i].notEmpty) begin
-                MemReq req = graphOutQs[i].first();
-                graphOutQs[i].deq();
-                memReqQ[i].enq(memReqToBC(req));
-                //$display("toMem Graph routing to mem %0d ", i, fshow(req));
-            end
-            else if(engineOutQs[i].notEmpty) begin
-                MemReq req = engineOutQs[i].first();
-                engineOutQs[i].deq();
-                memReqQ[i].enq(memReqToBC(req));
-                //$display("toMem Engine routing to mem %0d ", i, fshow(req));
-            end
-            else if(worklistOutQs[i].notEmpty) begin
+        rule toMem(doneResetting && (worklistOutQs[i].notEmpty || graphOutQs[i].notEmpty || ssspOutQs[i].notEmpty));
+            if(worklistOutQs[i].notEmpty) begin
                 MemReq req = worklistOutQs[i].first();
                 worklistOutQs[i].deq();
                 memReqQ[i].enq(memReqToBC(req));
                 //$display("toMem WorkList routing to mem %0d ", i, fshow(req));
+            end
+            else if(graphOutQs[i].notEmpty) begin
+                MemReq req = graphOutQs[i].first();
+                graphOutQs[i].deq();
+                memReqQ[i].enq(memReqToBC(req));
+                //$display("toMem Graph routing to mem %0d ", i, fshow(req));
             end
             else if(ssspOutQs[i].notEmpty) begin
                 MemReq req = ssspOutQs[i].first();
@@ -198,11 +190,7 @@ module mkSSSP(BC_HW2_IFC);
             
             GaloisAddress gaddr = unpack(truncate(resp.rtnctl));
             //$display("Received packed gaddr %d", gaddr);
-            if(gaddr.mod == MK_ENGINE) begin
-                //$display("fromMem packet routing to Engine %0d", i);
-                engineInQs[i].enq(bcToMemResp(resp));
-            end
-            else if(gaddr.mod == MK_WORKLIST) begin
+            if(gaddr.mod == MK_WORKLIST) begin
                 //$display("fromMem packet routing to Worklist %0d", i);
                 worklistInQs[i].enq(bcToMemResp(resp));
             end
@@ -214,7 +202,7 @@ module mkSSSP(BC_HW2_IFC);
                 ssspInQs[i].enq(bcToMemResp(resp));
             end
             else begin
-                $display("ERROR: fromMem packet dest unknown: ", fshow(resp));
+                //$display("ERROR: fromMem packet dest unknown: ", fshow(resp));
             end
         endrule
     end
@@ -256,7 +244,7 @@ module mkSSSP(BC_HW2_IFC);
        seq
            // Handle all the resets!
            action
-               for(Integer i = 0; i < 16; i=i+1) action
+               for(Integer i = 0; i < `NUM_ENGINES; i=i+1) action
                    engineRsts[i].assertReset();
                endaction
                graphRst.assertReset();
@@ -452,7 +440,7 @@ module mkSSSP(BC_HW2_IFC);
                               
            $display("%0d: SSSP[%0d]: All Done!", cur_cycle, fpgaId);
            action
-               for(Integer i = 0; i < 16; i=i+1) action
+               for(Integer i = 0; i < `NUM_ENGINES; i=i+1) action
                    let result <- engines[i].result;
 	               engineResults[i] <= result;
                    $display("Engine[%0d][%0d] edges fetched = %0d", fpgaId, i, result);

@@ -57,7 +57,7 @@ module mkSSSPEngine(Engine ifc);
     Vector#(1, FIFOF#(GraphEdgeResp)) graphEdgeRespQs <- replicateM(mkFIFOF);
     Vector#(1, FIFOF#(GraphCASResp)) graphCASRespQs <- replicateM(mkFIFOF);
     
-    FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(2);
+    FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(8); // # nodes to fetch ahead of edges
     FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT);  // # entries = # edgeReq in flight
     
     FIFOF#(NodePayload) newDistQ <- mkSizedFIFOF(16);   // # entries = # destNode in flight
@@ -66,7 +66,7 @@ module mkSSSPEngine(Engine ifc);
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextRetryQ <- mkSizedFIFOF(2);
     CoalescingCounter casNumInFlight <- mkCCounter();
     
-    //LFSR#(Bit#(8)) lfsr <- mkLFSR_8;
+    LFSR#(Bit#(8)) lfsr <- mkLFSR_8;
     Reg#(Bit#(8)) casStall <- mkRegU;
     
     Reg#(Bit#(48)) numWorkFetched <- mkRegU;
@@ -89,18 +89,22 @@ module mkSSSPEngine(Engine ifc);
     endfunction
     /*
     rule printFIFOFulls;
- //       if(fpgaId == 0 && laneId==0) begin
+        if(fpgaId == 0 && laneId==4) begin
         let cycle <- cur_cycle;
-            if(cycle == 10000000) $display("%0d: SSSPEngine[%0d][%0d] all fulls: workIn:%b workOut:%b graphReq:%b graphResp:%b graphNodeQ1:%b graphNodeQ2:%b newDist:%b casQ1:%b casQ2:%b",
+            if(cycle > 2000000) $display("%0d: SSSPEngine[%0d][%0d] all fulls: workIn:%b workOut:%b graphsReqs:%b%b%b%b graphResps:%b%b%b%b graphNodeQ1:%b graphNodeQ2:%b newDist:%b casQ1:%b casQ2:%b",
                      cur_cycle, fpgaId, laneId,
-                     !workInQ.notFull, !workOutQ.notFull, !graphReqQ.notFull, !graphRespQ.notFull, !graphNodeQ1.notFull, !graphNodeQ2.notFull, !newDistQ.notFull,
+                     !workInQ.notFull, !workOutQ.notFull, !graphNodeReqQs[0].notFull, !graphNodeReqQs[1].notFull, !graphEdgeReqQs[0].notFull, !graphCASReqQs[0].notFull,
+               !graphNodeRespQs[0].notFull, !graphNodeRespQs[1].notFull, !graphEdgeRespQs[0].notFull, !graphCASRespQs[0].notFull,
+               !graphNodeQ1.notFull, !graphNodeQ2.notFull, !newDistQ.notFull,
                      !casContextQ1.notFull, !casContextQ2.notFull);
-            if(cycle == 10000000) $display("%0d: SSSPEngine[%0d][%0d] all empties: workIn:%b workOut:%b graphReq:%b graphResp:%b graphNodeQ1:%b graphNodeQ2:%b newDist:%b casQ1:%b casQ2:%b",
+            if(cycle > 2000000) $display("%0d: SSSPEngine[%0d][%0d] all empties: workIn:%b workOut:%b graphReqs:%b%b%b%b graphResps:%b%b%b%b graphNodeQ1:%b graphNodeQ2:%b newDist:%b casQ1:%b casQ2:%b",
                      cur_cycle, fpgaId, laneId,
-                     !workInQ.notEmpty, !workOutQ.notEmpty, !graphReqQ.notEmpty, !graphRespQ.notEmpty, !graphNodeQ1.notEmpty, !graphNodeQ2.notEmpty, !newDistQ.notEmpty,
+                     !workInQ.notEmpty, !workOutQ.notEmpty, !graphNodeReqQs[0].notEmpty, !graphNodeReqQs[1].notEmpty, !graphEdgeReqQs[0].notEmpty, !graphCASReqQs[0].notEmpty,
+               !graphNodeRespQs[0].notEmpty, !graphNodeRespQs[1].notEmpty, !graphEdgeRespQs[0].notEmpty, !graphCASRespQs[0].notEmpty,
+               !graphNodeQ1.notEmpty, !graphNodeQ2.notEmpty, !newDistQ.notEmpty,
                      !casContextQ1.notEmpty, !casContextQ2.notEmpty);
             
-   //     end
+        end
     endrule
     */
     rule calcDone;
@@ -231,8 +235,8 @@ module mkSSSPEngine(Engine ifc);
         end
         else begin
             casContextRetryQ.enq(tuple3(casResp.oldVal, tpl_2(cxt), tpl_3(cxt)));
-            //casStall <= lfsr.value() >> 2;
-            //lfsr.next();
+            casStall <= lfsr.value() >> 2;
+            lfsr.next();
             numCASRetried <= numCASRetried + 1;
             //$display("%0d: SSSPEngine[%0d][%0d]: CAS failed, retry...", cur_cycle, fpgaId, laneId);
         end
@@ -244,7 +248,7 @@ module mkSSSPEngine(Engine ifc);
         started <= True;
         done <= False;
         
-        //lfsr.seed({2'b0, fpgaid, laneid});
+        lfsr.seed({2'b0, fpgaid, laneid});
         casStall <= 0;
         casNumInFlight.init(`SSSPENGINE_NUM_IN_FLIGHT);
         
