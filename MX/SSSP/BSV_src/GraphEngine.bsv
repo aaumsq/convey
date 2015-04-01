@@ -91,8 +91,22 @@ module mkGraphEngine(GraphEngine);
         interface casReq = casReq_tmp[i];
         endinterface;
     endfunction
-    
-    
+    /*
+    rule print;
+        function Bool reqEmptyF(Integer x) = !memReqQ[x].notEmpty;
+        function Bool reqFullF(Integer x) = !memReqQ[x].notFull;
+        function Bool respEmptyF(Integer x) = !memRespQ[x].notEmpty;
+        function Bool respFullF(Integer x) = !memRespQ[x].notFull;
+        Vector#(16, Bool) reqEmpty = genWith(reqEmptyF);
+        Vector#(16, Bool) respEmpty = genWith(respEmptyF);
+        Vector#(16, Bool) reqFull = genWith(reqFullF);
+        Vector#(16, Bool) respFull = genWith(respFullF);
+        
+        let cycle <- cur_cycle;
+        if(cycle == 100000) $display("%0d: graphEngine[%0d] memReqQ empty:%b memReqQ full:%b memRespQ empty:%b memRespQ full:%b", cur_cycle, fpgaId,
+           reqEmpty, reqFull, respEmpty, respFull);
+    endrule
+    */
     Vector#(`NUM_ENGINES, Vector#(2, Get#(GraphNodeResp))) nodeResp_tmp = ?;
     Vector#(`NUM_ENGINES, Vector#(1, Get#(GraphEdgeResp))) edgeResp_tmp = ?;
     Vector#(`NUM_ENGINES, Vector#(1, Get#(GraphCASResp))) casResp_tmp = ?;
@@ -113,39 +127,45 @@ module mkGraphEngine(GraphEngine);
         endinterface;
     endfunction
     
-    for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
+    for(Integer i = 0; i < 8; i=i+1) begin
         (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1, pipesToMemNode0" *)
         rule pipesToMemNode0;
             let pkt <- nodePipes[i][0].memReq.get();
-            memReqQ[i].enq(pkt);
+            memReqQ[i*2].enq(pkt);
         endrule
         rule pipesToMemNode1;
             let pkt <- nodePipes[i][1].memReq.get();
-            memReqQ[i].enq(pkt);
+            memReqQ[i*2+1].enq(pkt);
         endrule
         rule pipesToMemEdge0;
             let pkt <- edgePipes[i][0].memReq.get();
-            memReqQ[i].enq(pkt);
+            memReqQ[i*2].enq(pkt);
         endrule
         rule pipesToMemCAS0;
             let pkt <- casPipes[i][0].memReq.get();
-            memReqQ[i].enq(pkt);
+            memReqQ[i*2+1].enq(pkt);
         endrule
         
-        rule memToPipes;
-            MemResp resp = memRespQ[i].first();
-            memRespQ[i].deq();
+        rule memToPipes0;
+            MemResp resp = memRespQ[i*2].first();
+            memRespQ[i*2].deq();
             
             if(resp.gaddr.addr == 0)
                 nodePipes[i][0].memResps[0].put(resp);
             else if(resp.gaddr.addr == 1)
                 nodePipes[i][0].memResps[1].put(resp);
-            else if(resp.gaddr.addr == 2)
+            else if(resp.gaddr.addr == 4) begin
+                edgePipes[i][0].memResp.put(resp);
+            end
+        endrule
+        rule memToPipes1;
+            MemResp resp = memRespQ[i*2+1].first();
+            memRespQ[i*2+1].deq();
+            
+            if(resp.gaddr.addr == 2)
                 nodePipes[i][1].memResps[0].put(resp);
             else if(resp.gaddr.addr == 3)
                 nodePipes[i][1].memResps[1].put(resp);
-            else if(resp.gaddr.addr == 4)
-                edgePipes[i][0].memResp.put(resp);
             else if(resp.gaddr.addr == 5)
                 casPipes[i][0].memResp.put(resp);
         endrule
