@@ -40,7 +40,7 @@ endinterface
 
 (* synthesize *)
 module mkWorklistFIFO(Worklist);
-    
+    Reg#(BC_AEId) fpgaId <- mkRegU;
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) enqQs <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) deqQs <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) stealQs <- replicateM(mkSizedWireFIFOF(2));
@@ -85,8 +85,8 @@ module mkWorklistFIFO(Worklist);
                 if(`DEBUG) $display("WorklistFIFO engineQ[%0d] is full!", i);
             end
             let cycle <- cur_cycle;
-            //if(cycle == 10000000) $display("WorklistFIFO[%d] empties: enqQs: %b, deqQs: %b, stealQs: %b, reqSteals (reg): %b, engineQs: %b", i, !enqQs[i].notEmpty, !deqQs[i].notEmpty, !stealQs[i].notEmpty, reqSteals[i], !engineQs[i].notEmpty);
-            //if(cycle == 10000000) $display("WorklistFIFO[%d] fulls: enqQs: %b, deqQs: %b, stealQs: %b, reqSteals (reg): %b, engineQs: %b", i, !enqQs[i].notFull, !deqQs[i].notFull, !stealQs[i].notFull, reqSteals[i], !engineQs[i].notFull);
+            //if(cycle == 10000000) $display("WorklistFIFO[%0d][%0d] empties: enqQs: %b, deqQs: %b, stealQs: %b, reqSteals (reg): %b, engineQs: %b", fpgaId, i, !enqQs[i].notEmpty, !deqQs[i].notEmpty, !stealQs[i].notEmpty, reqSteals[i], !engineQs[i].notEmpty);
+            //if(cycle == 10000000) $display("WorklistFIFO[%0d][%0d] fulls: enqQs: %b, deqQs: %b, stealQs: %b, reqSteals (reg): %b, engineQs: %b", fpgaId, i, !enqQs[i].notFull, !deqQs[i].notFull, !stealQs[i].notFull, reqSteals[i], !engineQs[i].notFull);
         endrule
         
         rule processFill(started);
@@ -141,6 +141,7 @@ module mkWorklistFIFO(Worklist);
         engine.init(fpgaid, lockloc, headptrloc, tailptrloc, maxsize, bufferloc);
         done <= False;
         started <= True;
+        fpgaId <= fpgaid;
         
         for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
             reqSteals[i] <= False;
