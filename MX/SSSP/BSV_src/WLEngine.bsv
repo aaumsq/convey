@@ -39,6 +39,7 @@ endinterface
 `define WLENGINE_BUFIN_SIZE 512
 `define WLENTRY_SIZE 8
 `define LG_WLENTRY_SIZE 3
+`define WLENGINE_MAX_WRITES 8192
 `define WLENGINE_BACKOFF 128
 `define WRITEFSM_TIMEOUT 2048
 
@@ -113,7 +114,7 @@ module mkWLEngine(WLEngine);
                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: old lock bit = %0d", cur_cycle, fpgaId, rsp.data);
                    // Data is the old data, so if 1 then it failed
                    if(truncate(rsp.data) == 32'd1) begin
-                       //$display("  Someone currently using it, retry...");
+                       //if(`DEBUG) $display("%0d: mkWLEngine[%0d]:  Worklist is locked, retry...", cur_cycle, fpgaId);
                    end
                endaction
           endseq
@@ -142,6 +143,7 @@ module mkWLEngine(WLEngine);
     FIFOF#(Bit#(5)) writeFSM_writeQ <- mkSizedFIFOF(16);
     Reg#(Bit#(`LG_NUM_ENGINES)) writeFSM_curIdx <- mkRegU;
     Reg#(Bit#(1)) writeFSM_curBufIdx <- mkRegU;
+    Reg#(Bit#(16)) writeFSM_totalWrites <- mkRegU;
     Reg#(Bool) writeFSM_done <- mkRegU;
     Reg#(BC_Addr) writeFSM_wlSize <- mkRegU;
     Reg#(BC_Addr) writeFSM_maxSizeMinusOne <- mkRegU;
@@ -158,6 +160,7 @@ module mkWLEngine(WLEngine);
                if(`DEBUG) $display("%0d: mkWLEngine: WriteFSM START", cur_cycle);
                lockFSM.start();
                writeFSM_curIdx <= 0;
+               writeFSM_totalWrites <= 0;
                writeFSM_done <= False;
            endaction
            
@@ -174,7 +177,10 @@ module mkWLEngine(WLEngine);
            while(!writeFSM_done) seq
                action
                    if(`DEBUG) $display("%0d: mkWLEngine WriteFSM checking doubleBufOut[%0d][%0d], writeFSM_done: %0d, notEmpty: %0d", cur_cycle, writeFSM_curIdx, writeFSM_curBufIdx, writeFSM_done, doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].notEmpty);
-                   if(doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].notEmpty) begin
+                   if(writeFSM_totalWrites > `WLENGINE_MAX_WRITES) begin
+                       writeFSM_done <= True;
+                   end
+                   else if(doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].notEmpty) begin
                        if(writeFSM_wlSize < writeFSM_maxSizeMinusOne) begin
                            WLEntry entry = doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].first();
                            doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].deq();
@@ -182,6 +188,7 @@ module mkWLEngine(WLEngine);
                            BC_Addr addr = bufferLoc + (tailPtr << `LG_WLENTRY_SIZE);
                            memReqQ[4].enq(tagged MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}, data: pack(entry)});
                            writeFSM_numWrites.inc();
+                           writeFSM_totalWrites <= writeFSM_totalWrites + 1;
                           
                            if(`DEBUG) $display("mkWLEngine: WriteFSM headPtr=%0d, tailPtr=%0d, packet: %x", headPtr, tailPtr, entry);
                            tailPtr <= tailPtr + 1;
@@ -252,7 +259,7 @@ module mkWLEngine(WLEngine);
         
         WLEntry entry = unpack(rsp.data);
         if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM entry priority: %0x, graphId: %0x", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
-        if(readFSM_bufIdx == 0)
+        if(readFSM_buf == 0)
             bufIn0[readFSM_bufIdx].enq(entry);
         else
             bufIn1[readFSM_bufIdx].enq(entry);
@@ -297,7 +304,7 @@ module mkWLEngine(WLEngine);
            if(readFSM_numEntries > 0) seq
                while(readFSM_curEntry < readFSM_numEntries) seq
                    action
-                       if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries);
+                       if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d, writing to buf%0d[%0d]...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
                        BC_Addr addr = bufferLoc + (headPtr << `LG_WLENTRY_SIZE);
                        memReqQ[2].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
                        readFSM_numReads.inc();
