@@ -77,34 +77,6 @@ module mkWLEngine(WLEngine);
     Vector#(`NUM_ENGINES, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBufBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
     Vector#(`NUM_ENGINES, Reg#(Bit#(1))) curBufOut <- replicateM(mkRegU);
 
-
-    Wire#(Bool) bufInValid <- mkDWire(False);
-    Wire#(Bit#(`LG_NUM_ENGINES)) bufInWriteIdxW <- mkDWire(?);
-    Wire#(Bit#(1)) bufInWriteBufW <- mkDWire(?);
-    
-    (* no_implicit_conditions *)
-    rule setWires;
-        function Bool bufInEmptyF0(Integer x) = !bufIn0[x].notEmpty;
-        function Bool bufInEmptyF1(Integer x) = !bufIn1[x].notEmpty;
-        Vector#(`NUM_ENGINES, Bool) bufInEmpties0 = genWith(bufInEmptyF0);
-        Vector#(`NUM_ENGINES, Bool) bufInEmpties1 = genWith(bufInEmptyF1);
-        let elem0 = findElem(True, bufInEmpties0);
-        let elem1 = findElem(True, bufInEmpties1);
-        if(isValid(elem0)) begin
-            Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem0));
-            //$display("BufInEmpties: %b, Empty idx: %0d", bufInEmpties0, idx);
-            bufInWriteIdxW <= idx;
-            bufInWriteBufW <= 0;
-            bufInValid <= True;
-        end
-        else if(isValid(elem1)) begin
-            Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem1));
-            //$display("BufInEmpties: %b, Empty idx: %0d", idx);
-            bufInWriteIdxW <= idx;
-            bufInWriteBufW <= 1;
-            bufInValid <= True;
-        end
-    endrule
     
     function BC_Addr getWLSize(BC_Addr head, BC_Addr tail, BC_Addr max);
         // Get number of entries in FIFO
@@ -289,11 +261,9 @@ module mkWLEngine(WLEngine);
     let readFSM <- mkFSM(
        seq
            action
-               readFSM_bufIdx <= bufInWriteIdxW;
-               readFSM_buf <= bufInWriteBufW;
                readFSM_success <= False;
                lockFSM.start();
-               if(`DEBUG) $display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d idx %0d...", cur_cycle, fpgaId, bufInWriteBufW, bufInWriteIdxW);
+               if(`DEBUG) $display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d idx %0d...", cur_cycle, fpgaId, readFSM_buf, readFSM_bufIdx);
            endaction
            
            action
@@ -397,11 +367,29 @@ module mkWLEngine(WLEngine);
        endseq
        );
     
-    rule readWorklist(started);
-        if(bufInValid) begin
+    rule startRead(started && readFSM.done);
+        function Bool bufInEmptyF0(Integer x) = !bufIn0[x].notEmpty;
+        function Bool bufInEmptyF1(Integer x) = !bufIn1[x].notEmpty;
+        Vector#(`NUM_ENGINES, Bool) bufInEmpties0 = genWith(bufInEmptyF0);
+        Vector#(`NUM_ENGINES, Bool) bufInEmpties1 = genWith(bufInEmptyF1);
+        let elem0 = findElem(True, bufInEmpties0);
+        let elem1 = findElem(True, bufInEmpties1);
+        if(isValid(elem0)) begin
+            Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem0));
+            //$display("BufInEmpties: %b, Empty idx: %0d", bufInEmpties0, idx);
+            readFSM_bufIdx <= idx;
+            readFSM_buf <= 0;
+            readFSM.start();
+        end
+        else if(isValid(elem1)) begin
+            Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem1));
+            //$display("BufInEmpties: %b, Empty idx: %0d", idx);
+            readFSM_bufIdx <= idx;
+            readFSM_buf <= 1;
             readFSM.start();
         end
     endrule
+    
     
     Reg#(Bit#(16)) triggerWriteFSM_timeout <- mkRegU;
     Reg#(Bit#(1)) triggerWriteFSM_lastIdx <- mkRegU;
@@ -430,7 +418,6 @@ module mkWLEngine(WLEngine);
         end
     endrule
     
-
     
     for(Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
         
