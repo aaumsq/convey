@@ -71,8 +71,7 @@ module mkWLEngine(WLEngine);
     Vector#(16, FIFOF#(MemReq)) memReqQ <- replicateM(mkFIFOF);
     Vector#(16, FIFOF#(MemResp)) memRespQ <- replicateM(mkFIFOF);
     
-    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) bufIn0 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
-    Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) bufIn1 <- replicateM(mkSizedBRAMFIFOF(`WLENGINE_BUFIN_SIZE));
+    Vector#(`NUM_ENGINES, Vector#(2, FIFOF#(WLEntry))) doubleBufIn <- replicateM(replicateM(mkSizedBufBRAMFIFOF(`WLENGINE_BUFIN_SIZE)));
     Vector#(`NUM_ENGINES, Reg#(Bit#(1))) curBufIn <- replicateM(mkRegU);
 
     Vector#(`NUM_ENGINES, Vector#(2, FIFOF#(WLEntry))) doubleBufOut <- replicateM(replicateM(mkSizedBufBRAMFIFOF(`WLENGINE_BUFOUT_SIZE)));
@@ -147,11 +146,11 @@ module mkWLEngine(WLEngine);
     Reg#(Bool) writeFSM_done <- mkRegU;
     Reg#(BC_Addr) writeFSM_wlSize <- mkRegU;
     Reg#(BC_Addr) writeFSM_maxSizeMinusOne <- mkRegU;
-    CoalescingCounter writeFSM_numWrites <- mkCCounter();
+    FIFOF#(Bit#(0)) writeFSM_outstandingWrites <- mkSizedFIFOF(128);
     
-    rule writeFSM_catchWriteAcks(writeFSM_numWrites.getVal() > 0);
+    rule writeFSM_catchWriteAcks(writeFSM_outstandingWrites.notEmpty);
         memRespQ[4].deq();
-        writeFSM_numWrites.dec();
+        writeFSM_outstandingWrites.deq();
     endrule
     
     let writeFSM <- mkFSM(
@@ -187,7 +186,7 @@ module mkWLEngine(WLEngine);
                           
                            BC_Addr addr = bufferLoc + (tailPtr << `LG_WLENTRY_SIZE);
                            memReqQ[4].enq(tagged MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}, data: pack(entry)});
-                           writeFSM_numWrites.inc();
+                           writeFSM_outstandingWrites.enq(?);
                            writeFSM_totalWrites <= writeFSM_totalWrites + 1;
                           
                            if(`DEBUG) $display("mkWLEngine: WriteFSM headPtr=%0d, tailPtr=%0d, packet: %x", headPtr, tailPtr, entry);
@@ -213,7 +212,7 @@ module mkWLEngine(WLEngine);
                endaction
            endseq
            
-           while(writeFSM_numWrites.getVal() > 0) seq
+           while(writeFSM_outstandingWrites.notEmpty) seq
                action
                    //$display("%0d: WriteFSM: waiting for %0d writes to complete", cur_cycle, writeFSM_numWrites.getVal());
                    noAction;
@@ -250,19 +249,16 @@ module mkWLEngine(WLEngine);
     Reg#(Bit#(`LG_NUM_ENGINES)) readFSM_bufIdx <- mkRegU;
     Reg#(Bit#(1)) readFSM_buf <- mkRegU;
     Reg#(Bool) readFSM_success <- mkRegU;
-    CoalescingCounter readFSM_numReads <- mkCCounter;
+    FIFOF#(Bit#(0)) readFSM_outstandingReads <- mkSizedFIFOF(128);
     
-    rule readFSM_processReads(readFSM_numReads.getVal() > 0);
+    rule readFSM_processReads(readFSM_outstandingReads.notEmpty);
         MemResp rsp = memRespQ[2].first();
         memRespQ[2].deq();
-        readFSM_numReads.dec();
+        readFSM_outstandingReads.deq();
         
         WLEntry entry = unpack(rsp.data);
         if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM entry priority: %0x, graphId: %0x", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
-        if(readFSM_buf == 0)
-            bufIn0[readFSM_bufIdx].enq(entry);
-        else
-            bufIn1[readFSM_bufIdx].enq(entry);
+        doubleBufIn[readFSM_bufIdx][readFSM_buf].enq(entry);
     endrule
     
     let readFSM <- mkFSM(
@@ -307,7 +303,7 @@ module mkWLEngine(WLEngine);
                        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d, writing to buf%0d[%0d]...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
                        BC_Addr addr = bufferLoc + (headPtr << `LG_WLENTRY_SIZE);
                        memReqQ[2].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
-                       readFSM_numReads.inc();
+                       readFSM_outstandingReads.enq(?);
                        
                        readFSM_curEntry <= readFSM_curEntry + 1;
                        
@@ -320,7 +316,7 @@ module mkWLEngine(WLEngine);
                    endaction
                endseq
                
-               while(readFSM_numReads.getVal() > 0) seq
+               while(readFSM_outstandingReads.notEmpty) seq
                    action
                        //$display("%0d: ReadFSM: waiting for %0d reads to complete", cur_cycle, readFSM_numReads.getVal());
                        noAction;
@@ -375,8 +371,8 @@ module mkWLEngine(WLEngine);
        );
     
     rule startRead(started && readFSM.done);
-        function Bool bufInEmptyF0(Integer x) = !bufIn0[x].notEmpty;
-        function Bool bufInEmptyF1(Integer x) = !bufIn1[x].notEmpty;
+        function Bool bufInEmptyF0(Integer x) = !doubleBufIn[x][0].notEmpty;
+        function Bool bufInEmptyF1(Integer x) = !doubleBufIn[x][1].notEmpty;
         Vector#(`NUM_ENGINES, Bool) bufInEmpties0 = genWith(bufInEmptyF0);
         Vector#(`NUM_ENGINES, Bool) bufInEmpties1 = genWith(bufInEmptyF1);
         let elem0 = findElem(True, bufInEmpties0);
@@ -429,22 +425,22 @@ module mkWLEngine(WLEngine);
     for(Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
         
         rule setCurBufIn(started);
-            if(((curBufIn[i] == 0) && !bufIn0[i].notEmpty && bufIn1[i].notEmpty) ||
-               ((curBufIn[i] == 1) && !bufIn1[i].notEmpty && bufIn0[i].notEmpty)) begin
+            if(((curBufIn[i] == 0) && !doubleBufIn[i][0].notEmpty && doubleBufIn[i][1].notEmpty) ||
+               ((curBufIn[i] == 1) && !doubleBufIn[i][1].notEmpty && doubleBufIn[i][0].notEmpty)) begin
                // Flip bit
                curBufIn[i] <= 1 + curBufIn[i];
             end
             
-            if((curBufIn[i] == 0) && bufIn0[i].notEmpty) begin
-                WLEntry pkt = bufIn0[i].first();
+            if((curBufIn[i] == 0) && doubleBufIn[i][0].notEmpty) begin
+                WLEntry pkt = doubleBufIn[i][0].first();
                 if(`DEBUG) $display("%0d: mkWLEngine curBufIn[0] packet %x streaming to WorkListFIFOF", cur_cycle, pkt);
-                bufIn0[i].deq();
+                doubleBufIn[i][0].deq();
                 respQ[i].enq(pkt);
             end
-            if((curBufIn[i] == 1) && bufIn1[i].notEmpty) begin
-                WLEntry pkt = bufIn1[i].first();
+            if((curBufIn[i] == 1) && doubleBufIn[i][1].notEmpty) begin
+                WLEntry pkt = doubleBufIn[i][1].first();
                 if(`DEBUG) $display("%0d: mkWLEngine curBufIn[1] packet %x streaming to WorkListFIFOF", cur_cycle, pkt);
-                bufIn1[i].deq();
+                doubleBufIn[i][1].deq();
                 respQ[i].enq(pkt);
             end
         endrule
@@ -472,7 +468,7 @@ module mkWLEngine(WLEngine);
         let cycle <- cur_cycle;
         Bool isDone = True;
         for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
-            if(reqQ[i].notEmpty || respQ[i].notEmpty || bufIn0[i].notEmpty || bufIn1[i].notEmpty || doubleBufOut[i][0].notEmpty || doubleBufOut[i][1].notEmpty) begin
+            if(reqQ[i].notEmpty || respQ[i].notEmpty || doubleBufIn[i][0].notEmpty || doubleBufIn[i][1].notEmpty || doubleBufOut[i][0].notEmpty || doubleBufOut[i][1].notEmpty) begin
                 isDone = False;
             end
             //if(cycle == 10000000) $display("%0d: Lane %0d notEmpties: reqQ:%b respQ:%b bufIn0:%b bufIn1:%b, doubBufOut0:%b, doubBufOut1:%b, memReq:%b, memResp:%b", cur_cycle, i, reqQ[i].notEmpty, respQ[i].notEmpty, bufIn0[i].notEmpty, bufIn1[i].notEmpty, doubleBufOut[i][0].notEmpty, doubleBufOut[i][1].notEmpty,  memReqQ[i].notEmpty, memRespQ[i].notEmpty);
@@ -496,8 +492,6 @@ module mkWLEngine(WLEngine);
         bufferLoc <= bufferloc;
         started <= True;
         
-        writeFSM_numWrites.init(1023);
-        readFSM_numReads.init(1023);
         
         writeFSM_curIdx <= 0;
         writeFSM_curBufIdx <= 0;
