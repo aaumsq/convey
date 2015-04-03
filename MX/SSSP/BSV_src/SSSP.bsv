@@ -70,6 +70,7 @@ module mkSSSP(BC_HW2_IFC);
     Reg#(Bit#(4)) numDones <- mkRegU;
     Reg#(Bool) allDone <- mkRegU;
     Reg#(Bit#(4)) numAllDones <- mkRegU;
+    Reg#(Bool) doneResetting_pre <- mkReg(False);
     Reg#(Bool) doneResetting <- mkReg(False);
     Reg#(Bool) incremented <- mkRegU;
     Reg#(Bit#(64)) watchdog <- mkRegU;
@@ -105,6 +106,10 @@ module mkSSSP(BC_HW2_IFC);
     
     rule watchdogInc;
         watchdog <= watchdog + 1;
+    endrule
+    
+    rule setDoneResetting;
+        doneResetting <= doneResetting_pre;
     endrule
     
     function BC_MC_REQ memReqToBC(MemReq req);
@@ -154,6 +159,23 @@ module mkSSSP(BC_HW2_IFC);
         
     end
     
+    /*
+    rule print;
+        function Bool goutEmptyF(Integer x) = !graphOutQs[x].notEmpty;
+        function Bool goutFullF(Integer x) = !graphOutQs[x].notFull;
+        function Bool ginEmptyF(Integer x) = !graphInQs[x].notEmpty;
+        function Bool ginFullF(Integer x) = !graphInQs[x].notFull;
+        Vector#(16, Bool) reqEmpty = genWith(goutEmptyF);
+        Vector#(16, Bool) respEmpty = genWith(ginEmptyF);
+        Vector#(16, Bool) reqFull = genWith(goutFullF);
+        Vector#(16, Bool) respFull = genWith(ginFullF);
+        
+        let cycle <- cur_cycle;
+        if(cycle > 100000) $display("%0d: SSSP[%0d] graphOutQs empty:%b full:%b graphInQs empty:%b memRespQ full:%b", cur_cycle, fpgaId, 
+           reqEmpty, reqFull, respEmpty, respFull);
+    endrule
+    */
+    
     for(Integer i = 0; i < 16; i = i + 1) begin        
         mkConnection(worklist.memReq[i], toPut(worklistOutQs[i]));
         mkConnection(toGet(worklistInQs[i]), worklist.memResp[i]);
@@ -167,19 +189,19 @@ module mkSSSP(BC_HW2_IFC);
                 MemReq req = worklistOutQs[i].first();
                 worklistOutQs[i].deq();
                 memReqQ[i].enq(memReqToBC(req));
-                //$display("toMem WorkList routing to mem %0d ", i, fshow(req));
+                //$display("toMem WorkList routing to mem %0d ", i, fshow(memReqToBC(req)));
             end
             else if(graphOutQs[i].notEmpty) begin
                 MemReq req = graphOutQs[i].first();
                 graphOutQs[i].deq();
                 memReqQ[i].enq(memReqToBC(req));
-                //$display("toMem Graph routing to mem %0d ", i, fshow(req));
+                //$display("toMem Graph routing to mem %0d ", i, fshow(memReqToBC(req)));
             end
             else if(ssspOutQs[i].notEmpty) begin
                 MemReq req = ssspOutQs[i].first();
                 ssspOutQs[i].deq();
                 memReqQ[i].enq(memReqToBC(req));
-                //$display("toMem SSSP routing to mem %0d ", i, fshow(req));
+                //$display("toMem SSSP routing to mem %0d ", i, fshow(memReqToBC(req)));
             end 
         endrule
         
@@ -255,7 +277,7 @@ module mkSSSP(BC_HW2_IFC);
            endaction
            
            action
-               doneResetting <= True;
+               doneResetting_pre <= True;
            endaction
        
 	       // Send read requests for the parameters for this FPGA (in parallel)
