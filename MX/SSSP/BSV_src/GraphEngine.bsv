@@ -127,47 +127,70 @@ module mkGraphEngine(GraphEngine);
         endinterface;
     endfunction
     
-    for(Integer i = 0; i < 8; i=i+1) begin
-        (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1, pipesToMemNode0" *)
-        rule pipesToMemNode0;
-            let pkt <- nodePipes[i][0].memReq.get();
-            memReqQ[i*2].enq(pkt);
+    for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
+        (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1_0, pipesToMemNode0_0" *)
+        rule pipesToMemNode0_0;
+            let pkt <- nodePipes[i][0].memReqs[0].get();
+            memReqQ[i*4].enq(pkt);
         endrule
-        rule pipesToMemNode1;
-            let pkt <- nodePipes[i][1].memReq.get();
-            memReqQ[i*2+1].enq(pkt);
+        rule pipesToMemNode0_1;
+            let pkt <- nodePipes[i][0].memReqs[1].get();
+            memReqQ[i*4].enq(pkt);
         endrule
+        rule pipesToMemNode1_0;
+            let pkt <- nodePipes[i][1].memReqs[0].get();
+            memReqQ[i*4+1].enq(pkt);
+        endrule
+        
+        rule pipesToMemNode1_1;
+            let pkt <- nodePipes[i][1].memReqs[1].get();
+            memReqQ[i*4+2].enq(pkt);
+        endrule
+
         rule pipesToMemEdge0;
             let pkt <- edgePipes[i][0].memReq.get();
-            memReqQ[i*2].enq(pkt);
+            memReqQ[i*4+3].enq(pkt);
         endrule
         rule pipesToMemCAS0;
             let pkt <- casPipes[i][0].memReq.get();
-            memReqQ[i*2+1].enq(pkt);
-        endrule
-        
+            memReqQ[i*4].enq(pkt);
+        endrule 
+       
         rule memToPipes0;
-            MemResp resp = memRespQ[i*2].first();
-            memRespQ[i*2].deq();
+            MemResp resp = memRespQ[i*4].first();
+            memRespQ[i*4].deq();
             
             if(resp.gaddr.addr == 0)
                 nodePipes[i][0].memResps[0].put(resp);
             else if(resp.gaddr.addr == 1)
                 nodePipes[i][0].memResps[1].put(resp);
-            else if(resp.gaddr.addr == 4) begin
-                edgePipes[i][0].memResp.put(resp);
-            end
+            else if(resp.gaddr.addr == 5)
+                casPipes[i][0].memResp.put(resp);
+            
         endrule
         rule memToPipes1;
-            MemResp resp = memRespQ[i*2+1].first();
-            memRespQ[i*2+1].deq();
+            MemResp resp = memRespQ[i*4+1].first();
+            memRespQ[i*4+1].deq();
             
             if(resp.gaddr.addr == 2)
                 nodePipes[i][1].memResps[0].put(resp);
-            else if(resp.gaddr.addr == 3)
+        endrule
+
+        rule memToPipes2;
+            MemResp resp = memRespQ[i*4+2].first();
+            memRespQ[i*4+2].deq();
+        
+            if(resp.gaddr.addr == 3)
                 nodePipes[i][1].memResps[1].put(resp);
-            else if(resp.gaddr.addr == 5)
-                casPipes[i][0].memResp.put(resp);
+        endrule
+                    
+        rule memToPipes3;
+            MemResp resp = memRespQ[i*4+3].first();
+            memRespQ[i*4+3].deq();
+
+            if(resp.gaddr.addr == 4) begin
+                edgePipes[i][0].memResp.put(resp);
+            end            
         endrule
     end
     

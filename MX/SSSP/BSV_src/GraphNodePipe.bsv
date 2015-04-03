@@ -29,7 +29,7 @@ typedef struct {
 interface GraphNodeIfc;
     interface Put#(GraphNodeReq) req;
     interface Get#(GraphNodeResp) resp;
-    interface Get#(MemReq) memReq;
+    interface Vector#(2, Get#(MemReq)) memReqs;
     interface Vector#(2, Put#(MemResp)) memResps;
     
     method Action init(BC_AEId fpgaId, Bit#(4) laneId, BC_Addr nodePtr);
@@ -47,7 +47,7 @@ module mkGraphNodePipe#(Integer lane0, Integer lane1)(GraphNodeIfc);
     FIFOF#(ReadNodePipe) readNodeQ2 <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
     FIFOF#(Bit#(64)) readNodeQ3_partialNode <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
     FIFOF#(GraphNodeResp) respQ <- mkFIFOF;
-    FIFOF#(MemReq) memReqQ <- mkFIFOF;
+    Vector#(2, FIFOF#(MemReq)) memReqQs <- replicateM(mkFIFOF);
     Vector#(2, FIFOF#(MemResp)) memRespQs <- replicateM(mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT));
 
     rule readNode;
@@ -58,7 +58,7 @@ module mkGraphNodePipe#(Integer lane0, Integer lane1)(GraphNodeIfc);
         
         GaloisAddress gaddr = GaloisAddress{mod: MK_GRAPH, addr: fromInteger(lane0)};
         Bit#(48) vaddr = nodePtr + (extend(nodeReq.id) << `LG_GRAPH_NODE_SIZE); // base + offset*16 (16B nodes)
-        memReqQ.enq(tagged MemRead64{addr: vaddr, gaddr: gaddr});
+        memReqQs[0].enq(tagged MemRead64{addr: vaddr, gaddr: gaddr});
     endrule
     
     rule readNode2;
@@ -75,7 +75,7 @@ module mkGraphNodePipe#(Integer lane0, Integer lane1)(GraphNodeIfc);
         if(`DEBUG) $display("%0d: GraphEngine[%0d][%0d] receive readNode resp #1, data = %0x (%0d %0d)", cur_cycle, fpgaId, laneId, rsp.data);
         GaloisAddress gaddr = GaloisAddress{mod: MK_GRAPH, addr: fromInteger(lane1)};
         Bit#(48) vaddr = nodePtr + (extend(cxt.nodeID) << `LG_GRAPH_NODE_SIZE) + 8;
-        memReqQ.enq(tagged MemRead64{addr: vaddr, gaddr: gaddr});
+        memReqQs[1].enq(tagged MemRead64{addr: vaddr, gaddr: gaddr});
     endrule
     
     rule readNode3;
@@ -101,7 +101,7 @@ module mkGraphNodePipe#(Integer lane0, Integer lane1)(GraphNodeIfc);
     
     interface req = toPut(reqQ);
     interface resp = toGet(respQ);
-    interface memReq = toGet(memReqQ);
+    interface memReqs = map(toGet, memReqQs);
     interface memResps = map(toPut, memRespQs);
 endmodule
 

@@ -26,8 +26,6 @@ import GraphEngine::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
-`define NUM_ENGINES 8
-`define LG_NUM_ENGINES 4
 `define WATCHDOG_TIMEOUT 5000000000
 //`define WATCHDOG_TIMEOUT 50000000
 //`define WATCHDOG_TIMEOUT 100000

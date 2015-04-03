@@ -1,8 +1,8 @@
 `ifndef _GALOIS_DEFS_
 `define _GALOIS_DEFS_
 
-`define NUM_ENGINES 8
-`define LG_NUM_ENGINES 3
+`define NUM_ENGINES 4
+`define LG_NUM_ENGINES 2
 
 `define WL_SPILL_PORTS 16
 `define WL_WLFIFO_SIZE 1024
