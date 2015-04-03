@@ -48,6 +48,15 @@ module mkGraphEdgePipe#(Integer lane0)(GraphEdgeIfc);
     FIFOF#(MemReq) memReqQ <- mkFIFOF;
     FIFOF#(MemResp) memRespQ <- mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT);
     
+    /*
+    rule print;
+        let cycle <- cur_cycle;
+        if(cycle > 60000) $display("%0d: GraphEdgePipe[%0d][%0d] fulls: reqQ:%b readEdgeQ:%b respQ:%b memReqQ:%b memRespQ:%b", cur_cycle, fpgaId, laneId, 
+           !reqQ.notFull, !readEdgeQ.notFull, !respQ.notFull, !memReqQ.notFull, !memRespQ.notFull);
+        if(cycle > 60000) $display("%0d: GraphEdgePipe[%0d][%0d] empty: reqQ:%b readEdgeQ:%b respQ:%b memReqQ:%b memRespQ:%b", cur_cycle, fpgaId, laneId, 
+           !reqQ.notEmpty, !readEdgeQ.notEmpty, !respQ.notEmpty, !memReqQ.notEmpty, !memRespQ.notEmpty);
+    endrule
+    */
     rule readEdge;
         GraphEdgeReq edgeReq = reqQ.first();
         reqQ.deq();
