@@ -35,11 +35,11 @@ interface WLEngine;
 endinterface
 
 
-`define WLENGINE_BUFOUT_SIZE 512
-`define WLENGINE_BUFIN_SIZE 512
+`define WLENGINE_BUFOUT_SIZE 1024
+`define WLENGINE_BUFIN_SIZE 1024
 `define WLENTRY_SIZE 8
 `define LG_WLENTRY_SIZE 3
-`define WLENGINE_MAX_WRITES 8192
+`define WLENGINE_MAX_WRITES 16384
 `define WLENGINE_BACKOFF 128
 `define WRITEFSM_TIMEOUT 2048
 
@@ -236,6 +236,8 @@ module mkWLEngine(WLEngine);
            endaction
            
            action
+               if(writeFSM_totalWrites > 0) 
+                   $display("%0d: mkWLEngine[%0d]: WriteFSM wrote %0d entries", cur_cycle, fpgaId, writeFSM_totalWrites);
                memRespQ[4].deq();
                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: WriteFSM done, unlocking!", cur_cycle, fpgaId);
            endaction
@@ -340,6 +342,7 @@ module mkWLEngine(WLEngine);
                
                action
                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM done, unlocking!", cur_cycle, fpgaId);
+                   $display("%0d: mkWLEngine[%0d]: ReadFSM read %0d entries for idx %0d[%0d]", cur_cycle, fpgaId, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
                    memRespQ[2].deq();
                    readFSM_success <= True;
                endaction
