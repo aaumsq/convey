@@ -93,6 +93,7 @@ module mkWLEngine(WLEngine);
     // Lock FSM: gets global FSM lock and updates head/tail pointers
     
     Reg#(Bit#(32)) lock_lockData <- mkRegU;
+    Reg#(Bit#(16)) lockFSM_backOff <- mkRegU;
     let lockFSM <- mkFSM(
        seq
            action
@@ -116,6 +117,17 @@ module mkWLEngine(WLEngine);
                        //if(`DEBUG) $display("%0d: mkWLEngine[%0d]:  Worklist is locked, retry...", cur_cycle, fpgaId);
                    end
                endaction
+/*
+               if(lock_lockData == 32'd1) seq
+                   if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM nothing to read, stalling for %0d cycles", cur_cycle, fpgaId, `WLENGINE_BACKOFF);
+                   lockFSM_backOff <= 0;
+                   while(lockFSM_backOff < `WLENGINE_BACKOFF) seq
+                       action
+                         lockFSM_backOff <= lockFSM_backOff + 1;
+                       endaction
+                   endseq
+               endseq
+*/
           endseq
            
            // Get updated head and tail pointers
@@ -357,7 +369,7 @@ module mkWLEngine(WLEngine);
                action
                    memRespQ[2].deq();
                endaction
-               
+/*               
                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM nothing to read, stalling for %0d cycles", cur_cycle, fpgaId, `WLENGINE_BACKOFF);
                readFSM_backOff <= 0;
                while(readFSM_backOff < `WLENGINE_BACKOFF) seq
@@ -369,6 +381,7 @@ module mkWLEngine(WLEngine);
                action
                    noAction;
                endaction
+ */
            endseq
        endseq
        );
