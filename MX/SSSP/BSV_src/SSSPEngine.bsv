@@ -40,7 +40,7 @@ interface Engine;
     interface Vector#(1, Put#(GraphCASResp)) graphCASResps;
 endinterface
 
-(* synthesize, descending_urgency = "casDone, cas, deqCasStall, recvDestNode, casRetry, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
+(* synthesize, descending_urgency = "casDone, cas, casRetry, recvDestNode, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
 module mkSSSPEngine(Engine ifc);
     Reg#(BC_AEId) fpgaId <-mkRegU;
     Reg#(Bit#(4)) laneId <- mkRegU;
@@ -63,11 +63,11 @@ module mkSSSPEngine(Engine ifc);
     FIFOF#(NodePayload) newDistQ <- mkSizedFIFOF(16);   // # entries = # destNode in flight
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ1 <- mkSizedFIFOF(2);
     FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextQ2 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT); // # entries = # CAS requests in flight
-    FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextRetryQ <- mkSizedFIFOF(2);
+    FIFOF#(Tuple3#(NodePayload, NodePayload, GraphNode)) casContextRetryQ <- mkSizedFIFOF(`SSSPENGINE_NUM_CAS_RETRY_IN_FLIGHT);
+    FIFOF#(Bit#(8)) casContextRetryStallQ <- mkSizedFIFOF(`SSSPENGINE_NUM_CAS_RETRY_IN_FLIGHT);
     CoalescingCounter casNumInFlight <- mkCCounter();
     
     LFSR#(Bit#(8)) lfsr <- mkLFSR_8;
-    Reg#(Bit#(8)) casStall <- mkRegU;
     
     Reg#(Bit#(48)) numWorkFetched <- mkRegU;
     Reg#(Bit#(48)) numWorkRetired <- mkRegU;
@@ -172,16 +172,38 @@ module mkSSSPEngine(Engine ifc);
         if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: getDestNode num %0d", cur_cycle, fpgaId, laneId, e.dest);
         graphNodeReqQs[1].enq(GraphNodeReq{id: e.dest});
     endrule
-    
-    rule deqCasStall(casStall > 0);
-        casStall <= casStall - 1;
-    endrule        
-    
+
+    Reg#(Tuple3#(NodePayload, NodePayload, GraphNode)) casRetryPkt <- mkRegU;
+    Reg#(Bit#(8)) casRetryStall <- mkReg(0);
+    Reg#(Bool) casRetryWait <- mkReg(False);
+    /*
     rule casRetry;
-        casContextQ1.enq(casContextRetryQ.first());
-        casContextRetryQ.deq();
+        casContextRetryStallQ.deq();
+        casContextQ1.enq(casContextRetryQ.first);
+        casContextRetryQ.deq;
+    endrule
+    */
+    
+    rule casRetry(!casRetryWait);
+        if(casRetryStall == 0) begin
+            casContextQ1.enq(casRetryPkt);
+            casRetryWait <= True;
+            //$display("%0d: SSSPEngine[%0d][%0d]: enqueueing retry packet %0x", cur_cycle, fpgaId, laneId, casRetryPkt);
+        end
+        else begin
+            casRetryStall <= casRetryStall - 1;
+        end
     endrule
     
+    rule casRetryDeq(casRetryWait);
+        casRetryWait <= False;
+        casRetryPkt <= casContextRetryQ.first();
+        casContextRetryQ.deq();
+        casRetryStall <= casContextRetryStallQ.first();
+        casContextRetryStallQ.deq();
+        //$display("%0d: SSSPEngine[%0d][%0d]: init cas stall %0d", cur_cycle, fpgaId, laneId, casContextRetryStallQ.first());    
+    endrule
+      
     rule recvDestNode(casNumInFlight.notMax);
         GraphNodeResp nodeResp = graphNodeRespQs[1].first();
         graphNodeRespQs[1].deq();
@@ -227,7 +249,7 @@ module mkSSSPEngine(Engine ifc);
             if(`DEBUG) $display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Num retired: %0d, num discarded: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, fshow(newWork));
             else begin
                 if(numEdgesDiscarded % 1024 == 0) begin
-                    $display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Edges retired: %0d, edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, numCASIssued, numCASRetried, fshow(newWork));
+                    //$display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Edges retired: %0d, edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, numCASIssued, numCASRetried, fshow(newWork));
                 end
             end
             numEdgesRetired <= numEdgesRetired + 1;
@@ -235,10 +257,18 @@ module mkSSSPEngine(Engine ifc);
         end
         else begin
             casContextRetryQ.enq(tuple3(casResp.oldVal, tpl_2(cxt), tpl_3(cxt)));
-            casStall <= lfsr.value() >> 2;
+            let stallVal = lfsr.value() >> 4;
+            casContextRetryStallQ.enq(stallVal);
             lfsr.next();
             numCASRetried <= numCASRetried + 1;
-            //$display("%0d: SSSPEngine[%0d][%0d]: CAS failed, retry...", cur_cycle, fpgaId, laneId);
+            //$display("%0d: SSSPEngine[%0d][%0d]: CAS failed, retry... set casStall = %0d", cur_cycle, fpgaId, laneId, stallVal);
+        end
+    endrule
+    
+    rule printStats(started);
+        let cycle <- cur_cycle;
+        if(cycle % 8192 == 0) begin
+            $display("%0d: SSSPEngine[%0d][%0d]: Edges retired: %0d, Edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Nodes in flight: %0d, Edges in flight: %0d", cycle, fpgaId, laneId, numEdgesRetired, numEdgesDiscarded, numCASIssued, numCASRetried, (numWorkFetched - numWorkRetired), (numEdgesFetched-numEdgesRetired-numEdgesDiscarded));
         end
     endrule
     
@@ -249,7 +279,6 @@ module mkSSSPEngine(Engine ifc);
         done <= False;
         
         lfsr.seed({2'b0, fpgaid, laneid});
-        casStall <= 0;
         casNumInFlight.init(`SSSPENGINE_NUM_IN_FLIGHT);
         
         numWorkFetched <= 0;

@@ -13,6 +13,7 @@
 `define LG_GRAPH_EDGE_SIZE 3
 
 `define SSSPENGINE_NUM_IN_FLIGHT 16
+`define SSSPENGINE_NUM_CAS_RETRY_IN_FLIGHT 16
 
 `define DEBUG False
 `endif
