@@ -126,8 +126,60 @@ module mkGraphEngine(GraphEngine);
         interface casResp = casResp_tmp[i];
         endinterface;
     endfunction
-    
-    for(Integer i = 0; i < `NUM_ENGINES; i=i+1) begin
+    /*
+    for(Integer i = 0; i < 8; i=i+1) begin
+        (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1, pipesToMemNode0" *)
+        rule pipesToMemNode0;
+            let pkt <- nodePipes[i][0].memReqs[0].get();
+            memReqQ[i*2].enq(pkt);
+        endrule
+        rule pipesToMemNode0_1;
+            let pkt <- nodePipes[i][0].memReqs[1].get();
+            memReqQ[i*2].enq(pkt);
+        endrule
+        rule pipesToMemNode1;
+            let pkt <- nodePipes[i][1].memReqs[0].get();
+            memReqQ[i*2+1].enq(pkt);
+        endrule
+        rule pipesToMemNode1_1;
+            let pkt <- nodePipes[i][1].memReqs[1].get();
+            memReqQ[i*2+1].enq(pkt);
+        endrule
+        rule pipesToMemEdge0;
+            let pkt <- edgePipes[i][0].memReq.get();
+            memReqQ[i*2].enq(pkt);
+        endrule
+        rule pipesToMemCAS0;
+            let pkt <- casPipes[i][0].memReq.get();
+            memReqQ[i*2+1].enq(pkt);
+        endrule
+        
+        rule memToPipes0;
+            MemResp resp = memRespQ[i*2].first();
+            memRespQ[i*2].deq();
+            
+            if(resp.gaddr.addr == 0)
+                nodePipes[i][0].memResps[0].put(resp);
+            else if(resp.gaddr.addr == 1)
+                nodePipes[i][0].memResps[1].put(resp);
+            else if(resp.gaddr.addr == 4) begin
+                edgePipes[i][0].memResp.put(resp);
+            end
+        endrule
+        rule memToPipes1;
+            MemResp resp = memRespQ[i*2+1].first();
+            memRespQ[i*2+1].deq();
+            
+            if(resp.gaddr.addr == 2)
+                nodePipes[i][1].memResps[0].put(resp);
+            else if(resp.gaddr.addr == 3)
+                nodePipes[i][1].memResps[1].put(resp);
+            else if(resp.gaddr.addr == 5)
+                casPipes[i][0].memResp.put(resp);
+        endrule
+    end
+    */    
+    for(Integer i = 0; i < 4; i=i+1) begin
         (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1_0, pipesToMemNode0_0" *)
         rule pipesToMemNode0_0;
             let pkt <- nodePipes[i][0].memReqs[0].get();
@@ -193,7 +245,7 @@ module mkGraphEngine(GraphEngine);
             end            
         endrule
     end
-    
+  
     let fsm <- mkFSM(
        seq
            action
