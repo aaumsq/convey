@@ -163,16 +163,18 @@ module mkBC_Sim_Main (Empty);
 	    UInt #(64) tot_rds = 0;
 	    UInt #(64) tot_wrs = 0;
 	    UInt #(64) tot_ats = 0;
-	    for (Integer fpga = 0; fpga < bc_num_FPGAs; fpga = fpga + 1) begin
+	    let cycle <- cur_cycle;
+  		for (Integer fpga = 0; fpga < bc_num_FPGAs; fpga = fpga + 1) begin
 	       for (Integer j = 0; j < 16; j = j + 1) begin
-		  match { .rds, .wrs, .ats } = vv_mc_models [fpga][j].rd_wr_counts;
-		  $display ("BC_Sim_Main: FPGA [%1d] mem [%3d] accesses: %10d reads, %10d writes, %10d atomics", fpga, j, rds, wrs, ats);
+          match { .rds, .wrs, .ats } = vv_mc_models [fpga][j].rd_wr_counts;
+		  $display ("BC_Sim_Main: FPGA [%1d] mem [%3d] accesses: %10d reads, %10d writes, %10d atomics, 0.%4d", fpga, j, rds, wrs, ats, 10000*(rds+wrs+ats)/extend(unpack(cycle)));
 		  tot_rds = tot_rds + rds;
 		  tot_wrs = tot_wrs + wrs;
 		  tot_ats = tot_ats + ats;
 	      end
 	    end
 	    $display ("BC_Sim_Main:          Total mem accesses: %10d reads, %10d writes, %10d atomics", tot_rds, tot_wrs, tot_ats);
+        $display("BC_Sim_Main:          Memory utilization: 0.%4d", 10000*(tot_rds + tot_wrs + tot_ats)/(4*16*extend(unpack(cycle))));
 	 endaction
       endseq
       );
