@@ -40,7 +40,7 @@ interface Engine;
     interface Vector#(1, Put#(GraphCASResp)) graphCASResps;
 endinterface
 
-(* synthesize, descending_urgency = "casDone, cas, casRetry, recvDestNode, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
+(* synthesize, descending_urgency = "casDone, cas, recvDestNode, casRetry, getDestNode, getEdges, recvSrcNode, getSrcNode" *)
 module mkSSSPEngine(Engine ifc);
     Reg#(BC_AEId) fpgaId <-mkRegU;
     Reg#(Bit#(4)) laneId <- mkRegU;
@@ -77,6 +77,22 @@ module mkSSSPEngine(Engine ifc);
     
     Reg#(Bit#(48)) numCASIssued <- mkRegU;
     Reg#(Bit#(48)) numCASRetried <- mkRegU;
+    
+    Reg#(Bit#(48)) numWorkInEmpty <- mkRegU;
+    Reg#(Bit#(48)) numWorkOutFull <- mkRegU;
+    
+    Reg#(Bit#(48)) numGraphNodeReqFull <- mkRegU;
+    Reg#(Bit#(48)) numGraphEdgeReqFull <- mkRegU;
+    Reg#(Bit#(48)) numGraphCASReqFull <- mkRegU;
+    
+    Reg#(Bit#(48)) numNewDistFull <- mkRegU;
+    Reg#(Bit#(48)) numGraphNode1Full <- mkRegU;
+    Reg#(Bit#(48)) numGraphNode2Full <- mkRegU;
+    
+    Reg#(Bit#(48)) numCasCxt1Full <- mkRegU;
+    Reg#(Bit#(48)) numCasCxt2Full <- mkRegU;
+    Reg#(Bit#(48)) numCasCxtRetryFull <- mkRegU;
+    Reg#(Bit#(48)) numCasCxtRetryStallFull <- mkRegU;
     
     function Bool isChannel(GraphResp resp, Channel chan);
         Bool ret = False;
@@ -265,10 +281,38 @@ module mkSSSPEngine(Engine ifc);
         end
     endrule
     
+    rule monitorWL;
+        if(!workInQ.notEmpty)
+            numWorkInEmpty <= numWorkInEmpty + 1;
+        if(!workOutQ.notFull)
+            numWorkOutFull <= numWorkOutFull + 1;
+        if(!graphNodeReqQs[1].notFull)
+            numGraphNodeReqFull <= numGraphNodeReqFull + 1;
+        if(!graphEdgeReqQs[0].notFull)
+            numGraphEdgeReqFull <= numGraphEdgeReqFull + 1;
+        if(!graphCASReqQs[0].notFull)
+            numGraphCASReqFull <= numGraphCASReqFull + 1;
+        if(!newDistQ.notFull)
+            numNewDistFull <= numNewDistFull + 1;
+        if(!graphNodeQ1.notFull)
+            numGraphNode1Full <= numGraphNode1Full + 1;
+        if(!graphNodeQ2.notFull)
+            numGraphNode2Full <= numGraphNode2Full + 1;
+        if(!casContextQ1.notFull)
+            numCasCxt1Full <= numCasCxt1Full + 1;
+        if(!casContextQ2.notFull)
+            numCasCxt2Full <= numCasCxt2Full + 1;
+        if(!casContextRetryQ.notFull)
+            numCasCxtRetryFull <= numCasCxtRetryFull + 1;
+        if(!casContextRetryStallQ.notFull)
+            numCasCxtRetryStallFull <= numCasCxtRetryStallFull + 1;
+    endrule
+    
     rule printStats(started);
         let cycle <- cur_cycle;
         if(cycle % 8192 == 0) begin
-            $display("%0d: SSSPEngine[%0d][%0d]: Edges retired: %0d, Edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Nodes in flight: %0d, Edges in flight: %0d", cycle, fpgaId, laneId, numEdgesRetired, numEdgesDiscarded, numCASIssued, numCASRetried, (numWorkFetched - numWorkRetired), (numEdgesFetched-numEdgesRetired-numEdgesDiscarded));
+            //$display("%0d: SSSPEngine[%0d][%0d]: Edges retired: %0d, Edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Nodes in flight: %0d, Edges in flight: %0d", cycle, fpgaId, laneId, numEdgesRetired, numEdgesDiscarded, numCASIssued, numCASRetried, (numWorkFetched - numWorkRetired), (numEdgesFetched-numEdgesRetired-numEdgesDiscarded));
+            $display("%0d: SSSPEngine[%0d][%0d]: Edges retired: %0d, Edges discarded: %0d, CAS issued: %0d, CAS retried: %0d, workInEmpty: %0d, workOutFull: %0d, nodeFull: %0d, edgeFull: %0d, casFull: %0d, newDistFull: %0d, graphNode1Full: %0d, graphNode2Full: %0d, casCxt1Full: %0d, casCxt2Full: %0d, casRetryFull: %0d, casRetryStallFull: %0d, Edges in flight: %0d", cycle, fpgaId, laneId, numEdgesRetired, numEdgesDiscarded, numCASIssued, numCASRetried, numWorkInEmpty, numWorkOutFull, numGraphNodeReqFull, numGraphEdgeReqFull, numGraphCASReqFull, numNewDistFull, numGraphNode1Full, numGraphNode2Full, numCasCxt1Full, numCasCxt2Full, numCasCxtRetryFull, numCasCxtRetryStallFull, (numEdgesFetched-numEdgesRetired-numEdgesDiscarded));
         end
     endrule
     
@@ -289,6 +333,21 @@ module mkSSSPEngine(Engine ifc);
         
         numCASIssued  <= 0;
         numCASRetried <= 0;
+        
+        numWorkInEmpty <= 0;
+        numWorkOutFull <= 0;
+        
+        numGraphNodeReqFull <= 0;
+        numGraphCASReqFull <= 0;
+        numGraphEdgeReqFull <= 0;
+
+        numNewDistFull <= 0;
+        numGraphNode1Full <= 0;
+        numGraphNode2Full <= 0;
+        numCasCxt1Full <= 0;
+        numCasCxt2Full <= 0;
+        numCasCxtRetryFull <= 0;
+        numCasCxtRetryStallFull <= 0;
     endmethod
     
     method ActionValue#(Bit#(64)) result();

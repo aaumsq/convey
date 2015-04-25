@@ -49,7 +49,34 @@ module mkGraphNodePipe#(Integer lane0, Integer lane1)(GraphNodeIfc);
     FIFOF#(GraphNodeResp) respQ <- mkFIFOF;
     Vector#(2, FIFOF#(MemReq)) memReqQs <- replicateM(mkFIFOF);
     Vector#(2, FIFOF#(MemResp)) memRespQs <- replicateM(mkSizedFIFOF(`GRAPH_NUM_IN_FLIGHT));
-
+    Reg#(Bit#(48)) readNodeFull <- mkRegU;
+    Reg#(Bit#(48)) readNode2Full <- mkRegU;
+    Reg#(Bit#(48)) readNode3Full <- mkRegU;
+    Reg#(Bit#(48)) respFull <- mkRegU;
+    Reg#(Bit#(48)) memReq0Full <- mkRegU;
+    Reg#(Bit#(48)) memReq1Full <- mkRegU;
+    
+    rule setCount;
+        if(!readNodeQ.notFull)
+            readNodeFull <= readNodeFull + 1;
+        if(!readNodeQ2.notFull)
+            readNode2Full <= readNode2Full + 1;
+        if(!readNodeQ3_partialNode.notFull)
+            readNode3Full <= readNode3Full + 1;
+        if(!respQ.notFull)
+            respFull <= respFull + 1;
+        if(!memReqQs[0].notFull)
+            memReq0Full <= memReq0Full + 1;
+        if(!memReqQs[1].notFull)
+            memReq1Full <= memReq1Full + 1;
+    endrule
+    
+    rule print;
+        let cycle <- cur_cycle;
+        //if(cycle % 8192 == 0)
+        //    $display("%0d: graphNodePipe[%0d][%0d][%0d]: readNodeFull: %0d, readNode2Full: %0d, readNode3Full: %0d, respFull: %0d, memReq0Full: %0d, memReq1Full: %0d", cycle, fpgaId, laneId, lane0, readNodeFull, readNode2Full, readNode3Full, respFull, memReq0Full, memReq1Full);
+    endrule
+    
     rule readNode;
         GraphNodeReq nodeReq = reqQ.first();
         reqQ.deq();
@@ -97,6 +124,13 @@ module mkGraphNodePipe#(Integer lane0, Integer lane1)(GraphNodeIfc);
         fpgaId <= fid;
         laneId <= lid;
         nodePtr <= ptr;
+        
+        readNodeFull <= 0;
+        readNode2Full <= 0;
+        readNode3Full <= 0;
+        respFull <= 0;
+        memReq0Full <= 0;
+        memReq1Full <= 0;
     endmethod
     
     interface req = toPut(reqQ);
