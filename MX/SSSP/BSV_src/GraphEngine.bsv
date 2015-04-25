@@ -179,6 +179,7 @@ module mkGraphEngine(GraphEngine);
         endrule
     end
     */    
+    
     for(Integer i = 0; i < 4; i=i+1) begin
         (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1_0, pipesToMemNode0_0" *)
         rule pipesToMemNode0_0;
@@ -245,7 +246,69 @@ module mkGraphEngine(GraphEngine);
             end            
         endrule
     end
-  
+/*
+    for(Integer i = 0; i < 2; i=i+1) begin
+        (* descending_urgency = "pipesToMemCAS0, pipesToMemEdge0, pipesToMemNode1_0, pipesToMemNode0_0" *)
+        rule pipesToMemNode0_0;
+            let pkt <- nodePipes[i][0].memReqs[0].get();
+            memReqQ[i*8].enq(pkt);
+        endrule
+        rule pipesToMemNode0_1;
+            let pkt <- nodePipes[i][0].memReqs[1].get();
+            memReqQ[i*8+2].enq(pkt); // skip idx 1, its used for writeFSM streaming
+        endrule
+        rule pipesToMemNode1_0;
+            let pkt <- nodePipes[i][1].memReqs[0].get();
+            memReqQ[i*8+3].enq(pkt);
+        endrule
+        
+        rule pipesToMemNode1_1;
+            let pkt <- nodePipes[i][1].memReqs[1].get();
+            memReqQ[i*8+7].enq(pkt);
+        endrule
+
+        rule pipesToMemEdge0;
+            let pkt <- edgePipes[i][0].memReq.get();
+            memReqQ[i*8+5].enq(pkt);
+        endrule
+        rule pipesToMemCAS0;
+            let pkt <- casPipes[i][0].memReq.get();
+            memReqQ[i*8+6].enq(pkt);
+        endrule 
+        
+        rule memToPipes0_0;
+            MemResp resp = memRespQ[i*8].first();
+            memRespQ[i*8].deq();
+            nodePipes[i][0].memResps[0].put(resp);
+        endrule
+        rule memToPipes0_1;
+            MemResp resp = memRespQ[i*8+2].first();
+            memRespQ[i*8+2].deq();            
+            nodePipes[i][0].memResps[1].put(resp);
+        endrule
+        rule memToPipes1_0;
+            MemResp resp = memRespQ[i*8+3].first();
+            memRespQ[i*8+3].deq();
+            nodePipes[i][1].memResps[0].put(resp);
+        endrule
+        rule memToPipes1_1;
+            MemResp resp = memRespQ[i*8+7].first();
+            memRespQ[i*8+7].deq();
+            nodePipes[i][1].memResps[1].put(resp);
+        endrule
+        rule memToPipes2;
+            MemResp resp = memRespQ[i*8+5].first();
+            memRespQ[i*8+5].deq();
+            edgePipes[i][0].memResp.put(resp);
+        endrule
+        rule memToPipes3;
+            MemResp resp = memRespQ[i*8+6].first();
+            memRespQ[i*8+6].deq();
+            casPipes[i][0].memResp.put(resp);
+        endrule
+         
+    end
+*/
     let fsm <- mkFSM(
        seq
            action
