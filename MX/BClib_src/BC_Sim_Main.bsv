@@ -104,7 +104,7 @@ module mkBC_Sim_Main (Empty);
 	 action
 	    for (Integer fpga = 0; fpga < bc_num_FPGAs; fpga = fpga + 1)
 	      for (Integer mc = 0; mc < 16; mc = mc + 1)
-		 vv_mc_models [fpga] [mc].set_params (2,      // latency
+		 vv_mc_models [fpga] [mc].set_params (128,      // latency
 						      1,      // debug_mem_trace_verbosity
 						      False,  // debug_stop_on_wrong_bank
 						      True);  // debug_stop_on_unaligned

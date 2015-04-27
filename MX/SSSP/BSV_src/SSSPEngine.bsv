@@ -57,7 +57,7 @@ module mkSSSPEngine(Engine ifc);
     Vector#(1, FIFOF#(GraphEdgeResp)) graphEdgeRespQs <- replicateM(mkFIFOF);
     Vector#(1, FIFOF#(GraphCASResp)) graphCASRespQs <- replicateM(mkFIFOF);
     
-    FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT); // # nodes to fetch ahead of edges
+    FIFOF#(GraphNode) graphNodeQ1 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT/4); // # nodes to fetch ahead of edges
     FIFOF#(GraphNode) graphNodeQ2 <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT);  // # entries = # edgeReq in flight
     
     FIFOF#(NodePayload) newDistQ <- mkSizedFIFOF(`SSSPENGINE_NUM_IN_FLIGHT);   // # entries = # destNode in flight

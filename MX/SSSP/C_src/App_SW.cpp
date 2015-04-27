@@ -184,7 +184,7 @@ int App_SW (const char *file)
     
     Job *jobs, *cp_jobs;
     uint32_t numJobs = 1;
-    uint64_t maxJobs = (uint64_t)4*1024*1024*1024; // 4 Giga-entries
+    uint64_t maxJobs = (uint64_t)2*1024*1024*1024; // 2 Giga-entries
     posix_memalign((void**)&jobs, 512, numJobs*sizeof(Job));
     
     #define INIT_IDX 0
