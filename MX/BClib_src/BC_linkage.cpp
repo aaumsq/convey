@@ -22,7 +22,9 @@
 #include  <sched.h>
 #include  <assert.h>
 
+#ifndef FOR_HW
 extern "C" {
+#endif
 
 // ================================================================
 // CONFIG COMPILATION OF THIS FILE
@@ -754,4 +756,6 @@ int main (int argc, char *argv[])
 
 // ================================================================
 
+#ifndef FOR_HW
 }
+#endif

@@ -8,6 +8,7 @@
 
 
 CC = cc
+CNYCC = cnycc
 LD = cc
 CFLAGS = -fPIC -O3 -D_FILE_OFFSET_BITS=64
 
@@ -36,6 +37,6 @@ cc_bsim:
 .PHONY: cc_v
 cc_v:
 	cp -p BC_linkage.h  $(BCLIB_OBJ_V)/BC_linkage.h
-	$(CC)  -DFOR_HW   -c  -o $(BCLIB_OBJ_V)/BC_linkage_HW.o  $(CFLAGS)  BC_linkage.cpp
+	$(CNYCC)  -DFOR_HW   -c  -o $(BCLIB_OBJ_V)/BC_linkage_HW.o  $(CFLAGS)  BC_linkage.cpp
 
 # ----------------------------------------------------------------
