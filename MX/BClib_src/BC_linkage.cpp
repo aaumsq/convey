@@ -62,9 +62,9 @@ static cny_image_t        sig;
 // The following 3 functions are implemented in Convey Scalar Co-processor Assembly
 // (see file cpAsm.s)
 
-extern void cpWrAEG0 ();
-extern void cpCaep ();
-extern long cpRdAEG0 ();
+extern "C" void cpWrAEG0 ();
+extern "C" long cpRdAEG0 ();
+extern "C" void cpCaep ();
 
 #endif
 
