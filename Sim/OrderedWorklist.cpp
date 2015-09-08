@@ -40,6 +40,10 @@ void OrderedWorklist::step() {
     curPriority = worklist->top().priority;
 }
 
+bool OrderedWorklist::workAvailable(uint64_t core) {
+    return !worklist->empty();
+}
+
 bool OrderedWorklist::notEmpty() {
     return !(worklist->empty() && futureWorklist->empty());
 }

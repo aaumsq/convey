@@ -209,6 +209,10 @@ void LocalOrderedWorklist::step() {
     //std::cout << "min priority: "<< minPriority << ", max priority: " << maxPriority << ", totalDiff: " << 100.0*double(totalDiff)/double(minPriority) <<  ", avgDiff: " << 100.0*double(totalDiff)/(double(activeCores) * double(minPriority)) << "%\n";
 }
 
+bool LocalOrderedWorklist::workAvailable(uint64_t core) {
+    return !localWorklist->at(core)->empty();
+}
+
 bool LocalOrderedWorklist::notEmpty() {
     bool anyNotEmpty = false;
     for(int i = 0; i < numCores; i++) {

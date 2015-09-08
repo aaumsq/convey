@@ -34,6 +34,7 @@ public:
     virtual bool getWork(Work& work, uint64_t core) = 0;
     virtual void putWork(Work work, uint64_t core) = 0;
     virtual void step() = 0;
+    virtual bool workAvailable(uint64_t core) = 0;
     virtual bool notEmpty() = 0;
     virtual uint64_t size() = 0;
 };

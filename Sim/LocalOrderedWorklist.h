@@ -22,6 +22,7 @@ public:
     virtual bool getWork(Work& work, uint64_t core);
     virtual void putWork(Work work, uint64_t core);
     virtual void step();
+    virtual bool workAvailable(uint64_t core);
     virtual bool notEmpty();
     virtual uint64_t size();
 };

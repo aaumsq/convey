@@ -4,9 +4,11 @@
 #include "UnorderedWorklist.h"
 
 
-UnorderedWorklist::UnorderedWorklist() {
-    worklist = new std::priority_queue<Work, std::vector<Work>, std::greater<Work> >();
+UnorderedWorklist::UnorderedWorklist(unsigned latency) {
+    worklist = new std::queue<Work>();
+    futureWorklist = new std::priority_queue<Work, std::vector<Work>, CompareTime>();
     timestep = 0;
+    this->latency = latency;
 }
 
 bool UnorderedWorklist::getWork(Work& work, uint64_t core) {
@@ -14,27 +16,33 @@ bool UnorderedWorklist::getWork(Work& work, uint64_t core) {
         return false;
     }
     
-    if(worklist->top().timestep <= timestep) {
-        work = worklist->top();
-        worklist->pop();
-        return true;
-    }
-    return false;
+    work = worklist->front();
+    worklist->pop();
+    return true;
 }
 
 void UnorderedWorklist::putWork(Work work, uint64_t core) {
-    work.priority = 0;
-    worklist->push(work);
+    work.timestep = timestep + latency;
+    futureWorklist->push(work);
 }
 
 void UnorderedWorklist::step() {
     timestep++;
+    
+    while(!futureWorklist->empty() && futureWorklist->top().timestep <= timestep) {
+        worklist->push(futureWorklist->top());
+        futureWorklist->pop();
+    }
 }
 
-bool UnorderedWorklist::notEmpty() {
+bool UnorderedWorklist::workAvailable(uint64_t core) {
     return !worklist->empty();
 }
 
+bool UnorderedWorklist::notEmpty() {
+    return !(worklist->empty() && futureWorklist->empty());
+}
+
 uint64_t UnorderedWorklist::size() {
-    return worklist->size();
+    return worklist->size() + futureWorklist->size();
 }
