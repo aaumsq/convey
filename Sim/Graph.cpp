@@ -27,13 +27,13 @@ bool Graph::loadEdgelistFile(const char* file) {
     std::ifstream in(file);
     in >> numNodes >> numEdges;
     
-    printf("numNodes: %0ld, numEdges: %0ld\n", numNodes, numEdges);
+    printf("numNodes: %0llud, numEdges: %0llud\n", numNodes, numEdges);
     //posix_memalign((void**)nodes, 512, numNodes*sizeof(Node));
     //posix_memalign((void**)edges, 512, numEdges*sizeof(Edge));
     nodes = (Node*)malloc(numNodes*sizeof(Node));
     edges = (Edge*)malloc(numEdges*sizeof(Edge));
-    printf("Sizeof node: %d, sizeof edge: %d\n", sizeof(Node), sizeof(Edge));
-    printf("nodes: %0ldB, edges: %0ldB\n", numNodes*sizeof(Node), numEdges*sizeof(Edge));
+    printf("Sizeof node: %lud, sizeof edge: %lud\n", sizeof(Node), sizeof(Edge));
+    printf("nodes: %0lludB, edges: %0lludB\n", numNodes*sizeof(Node), numEdges*sizeof(Edge));
     
     uint64_t src, dest, weight;
     uint64_t lastNode = -1;
@@ -54,7 +54,7 @@ bool Graph::loadEdgelistFile(const char* file) {
         // Append new edge
         assert(edgeIdx < numEdges);
         if(edgeIdx >= numEdges)
-            printf("ERROR: node %d edgeIdx %d is not less than numEdges %d (src %d, dest %d, weight %d)\n", src, edgeIdx, numEdges, src, dest, weight); 
+            printf("ERROR: node %lud edgeIdx %lud is not less than numEdges %llud (src %lud, dest %lud, weight %lud)\n", src, edgeIdx, numEdges, src, dest, weight); 
         edges[edgeIdx].dest = dest;
         edges[edgeIdx].weight = weight;
         nodes[src].numEdges += 1;
