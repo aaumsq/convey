@@ -11,6 +11,11 @@ UnorderedWorklist::UnorderedWorklist(unsigned latency) {
     this->latency = latency;
 }
 
+UnorderedWorklist::~UnorderedWorklist() {
+    delete worklist;
+    delete futureWorklist;
+}
+
 bool UnorderedWorklist::getWork(Work& work, uint64_t core) {
     if(worklist->empty()) {
         return false;

@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     //Worklist* worklist = new UnorderedWorklist(100);
     //Worklist* worklist = new OrderedWorklist();
     //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10);
-    Worklist* worklist = new OBIM(128, 10);
+    Worklist* worklist = new OBIM(128, 10, 10000);
     
     std::cout << "Running on " << argv[1] << " with source vertex " << source << std::endl;
     time_t t1, t2, t3;

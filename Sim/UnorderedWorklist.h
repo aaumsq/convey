@@ -13,6 +13,7 @@ class UnorderedWorklist : public Worklist {
 
 public:
     UnorderedWorklist(unsigned latency);
+    ~UnorderedWorklist();
     virtual bool getWork(Work& work, uint64_t core);
     virtual void putWork(Work work, uint64_t core);
     virtual void step();
