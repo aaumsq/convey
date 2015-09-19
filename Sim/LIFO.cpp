@@ -1,16 +1,24 @@
 
-#include "OrderedWorklist.h"
+#include <vector>
+#include <iostream>
+#include "LIFO.h"
 
 
-OrderedWorklist::OrderedWorklist(unsigned latency, uint64_t bucketSize) {
-    worklist = new std::priority_queue<Work, std::vector<Work>, ComparePriority>();
+LIFO::LIFO(unsigned latency) {
+    worklist = new std::stack<Work>();
     futureWorklist = new std::priority_queue<Work, std::vector<Work>, CompareTime>();
     timestep = 0;
     this->latency = latency;
-    this->bucketSize = bucketSize;
+    
+    std::cout << "Initializing LIFO scheduler, " << latency << " latency\n";
 }
 
-bool OrderedWorklist::getWork(Work& work, uint64_t core) {
+LIFO::~LIFO() {
+    delete worklist;
+    delete futureWorklist;
+}
+
+bool LIFO::getWork(Work& work, uint64_t core) {
     if(worklist->empty()) {
         return false;
     }
@@ -20,12 +28,12 @@ bool OrderedWorklist::getWork(Work& work, uint64_t core) {
     return true;
 }
 
-void OrderedWorklist::putWork(Work work, uint64_t core) {
-    work.priority = work.priority/bucketSize;
+void LIFO::putWork(Work work, uint64_t core) {
+    work.timestep = timestep + latency;
     futureWorklist->push(work);
 }
 
-void OrderedWorklist::step() {
+void LIFO::step() {
     timestep++;
     
     while(!futureWorklist->empty() && futureWorklist->top().timestep <= timestep) {
@@ -34,14 +42,14 @@ void OrderedWorklist::step() {
     }
 }
 
-bool OrderedWorklist::workAvailable(uint64_t core) {
+bool LIFO::workAvailable(uint64_t core) {
     return !worklist->empty();
 }
 
-bool OrderedWorklist::notEmpty() {
+bool LIFO::notEmpty() {
     return !(worklist->empty() && futureWorklist->empty());
 }
 
-uint64_t OrderedWorklist::size() {
+uint64_t LIFO::size() {
     return worklist->size() + futureWorklist->size();
 }

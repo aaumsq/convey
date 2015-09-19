@@ -1,20 +1,20 @@
-#ifndef __ORDERED_WORKLIST__
-#define __ORDERED_WORKLIST__
+#ifndef __LIFO__
+#define __LIFO__
 
 #include <queue>
+#include <stack>
 
 #include "Worklist.h"
 
-
-class OrderedWorklist : public Worklist {
-    std::priority_queue<Work, std::vector<Work>, ComparePriority>* worklist;
+class LIFO : public Worklist {
+    std::stack<Work>* worklist;
     std::priority_queue<Work, std::vector<Work>, CompareTime>* futureWorklist;
-    uint64_t timestep;
+    unsigned timestep;
     unsigned latency;
-    uint64_t bucketSize;
-    
+
 public:
-    OrderedWorklist(unsigned latency, uint64_t bucketSize);
+    LIFO(unsigned latency);
+    ~LIFO();
     virtual bool getWork(Work& work, uint64_t core);
     virtual void putWork(Work work, uint64_t core);
     virtual void step();

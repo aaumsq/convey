@@ -1,6 +1,12 @@
 
-sim:
-	g++ sssp.cpp UnorderedWorklist.cpp OrderedWorklist.cpp LocalOrderedWorklist.cpp OBIM.cpp Graph.cpp
+sssp:
+	g++ sssp.cpp UnorderedWorklist.cpp LIFO.cpp OrderedWorklist.cpp LocalOrderedWorklist.cpp OBIM.cpp Graph.cpp
+
+components:
+	g++ connectedcomponents.cpp UnorderedWorklist.cpp LIFO.cpp OrderedWorklist.cpp LocalOrderedWorklist.cpp OBIM.cpp Graph.cpp
+
+bfs:
+	g++ bfs.cpp UnorderedWorklist.cpp LIFO.cpp OrderedWorklist.cpp LocalOrderedWorklist.cpp OBIM.cpp Graph.cpp
 
 dij:
 	g++ CRS.cpp sssp_dij.cpp

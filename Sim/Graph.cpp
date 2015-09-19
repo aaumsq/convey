@@ -49,6 +49,8 @@ bool Graph::loadEdgelistFile(const char* file) {
             nodes[src].payload = -1;
             nodes[src].edgePtr = edgeIdx;
             nodes[src].numEdges = 0;
+            nodes[src].pagerank = 0.0;
+            nodes[src].lock = 0;
         }
         
         // Append new edge

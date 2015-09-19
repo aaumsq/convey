@@ -33,7 +33,6 @@ int main(int argc, char** argv) {
     uint64_t iters = 0;
     uint64_t workPerCurIter = 0;
     uint64_t workGenPerCurIter = 0;
-    uint64_t conflictsPerCurIter = 0;
     uint64_t totalWork = 0;
     uint64_t totalWorkGen = 0;
     bool infCores = true; //false;
@@ -47,7 +46,7 @@ int main(int argc, char** argv) {
     //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10);
     //Worklist* worklist = new OBIM(128, 10, 10000);
     
-    std::cout << "Running on " << argv[1] << " with source vertex " << source << std::endl;
+    std::cout << "Running BFS on " << argv[1] << " with source vertex " << source << std::endl;
     time_t t1, t2, t3;
     t1 = time(NULL);
     
@@ -62,16 +61,10 @@ int main(int argc, char** argv) {
 
     Work work;
     std::vector<uint64_t>* workPerIter = new std::vector<uint64_t>();
-    std::vector<uint64_t>* conflictsPerIter = new std::vector<uint64_t>();
 
     while(worklist->notEmpty()) {
         workPerCurIter = 0;
         workGenPerCurIter = 0;
-        conflictsPerCurIter = 0;
-        
-        for(uint64_t i = 0; i < graph->numNodes; i++) {
-            graph->getNode(i)->lock = false;
-        }
         
         if(infCores)
             maxCores = worklist->size();
@@ -81,33 +74,11 @@ int main(int argc, char** argv) {
             if(hasWork) {
                 Node* curNode = graph->getNode(work.graphId);
                 
-                // Check locks
-                bool abort = false;
                 for(int i = 0; i < curNode->numEdges; i++) {
                     Edge* edge = graph->getEdge(curNode->edgePtr + i);
                     Node* destNode = graph->getNode(edge->dest);
-                    if(destNode->lock) {
-                        abort = true;
-                    }
-                }
-                
-                // Someone else is using it, abort and retry later
-                if(abort) {
-                    conflictsPerCurIter++;
-                    worklist->putWork(work, x);
-                    continue;
-                }
-                                
-                // If successful, grab locks and continue
-                assert(!abort);
-                for(int i = 0; i < curNode->numEdges; i++) {
-                    Edge* edge = graph->getEdge(curNode->edgePtr + i);
-                    Node* destNode = graph->getNode(edge->dest);
-                    
-                    destNode->lock = true;
-                    
-                    if(curNode->payload + edge->weight < destNode->payload) {
-                        destNode->payload = curNode->payload + edge->weight;
+                    if(curNode->payload + 1 < destNode->payload) {
+                        destNode->payload = curNode->payload + 1;
                         
                         Work newWork = {edge->dest, destNode->payload, iters+1};
                         worklist->putWork(newWork, x);
@@ -121,10 +92,9 @@ int main(int argc, char** argv) {
         }
         
         if(iters % 1000 == 0) {
-            std::cout << "Iter " << iters << ": completed " << workPerCurIter << " work items, max " << maxCores << ", " << conflictsPerCurIter << " conflicts, worklist size: " << worklist->size() << ", gen work: " << workGenPerCurIter << ", total gen work: " << totalWorkGen << "\n";
+            std::cout << "Iter " << iters << ": completed " << workPerCurIter << " work items, max " << maxCores << ", worklist size: " << worklist->size() << ", gen work: " << workGenPerCurIter << ", total gen work: " << totalWorkGen << "\n";
         }
         workPerIter->push_back(workPerCurIter);
-        conflictsPerIter->push_back(conflictsPerCurIter);
         worklist->step();
         iters++;
         
@@ -135,7 +105,7 @@ int main(int argc, char** argv) {
     t3 = time(NULL);
     
     std::cout << "Setup time: " << (t2 - t1) << " seconds\n";
-    std::cout << "SSSP time: " << (t3 - t2) << " seconds\n";
+    std::cout << "BFS time: " << (t3 - t2) << " seconds\n";
     
     if(infCores)
         maxCores = maxWork;
@@ -151,9 +121,9 @@ int main(int argc, char** argv) {
     }
     
     std::ofstream out2("./stats.csv");
-    out2 << "Iteration, Work Completed, Conflicts\n";
+    out2 << "Iteration, Work Completed\n";
     for(int i = 0; i < workPerIter->size(); i++) {
-        out2 << i << ", " << workPerIter->at(i) << ", " << conflictsPerIter->at(i) << "\n";
+        out2 << i << ", " << workPerIter->at(i) << "\n";
     }
     out2.close();
 }

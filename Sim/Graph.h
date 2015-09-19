@@ -8,6 +8,8 @@ struct Node {
     uint64_t numEdges;
     uint64_t payload;
     uint64_t id;
+    double   pagerank;
+    bool     lock;
 };
 
 struct Edge {
