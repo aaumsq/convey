@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <cstring>
 #include "Graph.h"
 
 
@@ -22,6 +23,10 @@ void Graph::addNode(Node node) {
 
 }
 
+void Graph::clearLocks() {
+    memset(nodeLocks, 0, sizeof(bool)*numNodes);
+}
+
 bool Graph::loadEdgelistFile(const char* file) {
 
     std::ifstream in(file);
@@ -32,8 +37,13 @@ bool Graph::loadEdgelistFile(const char* file) {
     //posix_memalign((void**)edges, 512, numEdges*sizeof(Edge));
     nodes = (Node*)malloc(numNodes*sizeof(Node));
     edges = (Edge*)malloc(numEdges*sizeof(Edge));
+    nodeLocks = (bool*)malloc(numNodes*sizeof(bool));
     printf("Sizeof node: %lud, sizeof edge: %lud\n", sizeof(Node), sizeof(Edge));
     printf("nodes: %0lludB, edges: %0lludB\n", numNodes*sizeof(Node), numEdges*sizeof(Edge));
+    
+    for(int i = 0; i < numNodes; i++) {
+        nodeLocks[i] = false;
+    }
     
     uint64_t src, dest, weight;
     uint64_t lastNode = -1;
@@ -50,7 +60,6 @@ bool Graph::loadEdgelistFile(const char* file) {
             nodes[src].edgePtr = edgeIdx;
             nodes[src].numEdges = 0;
             nodes[src].pagerank = 0.0;
-            nodes[src].lock = 0;
         }
         
         // Append new edge

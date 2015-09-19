@@ -9,7 +9,6 @@ struct Node {
     uint64_t payload;
     uint64_t id;
     double   pagerank;
-    bool     lock;
 };
 
 struct Edge {
@@ -20,13 +19,16 @@ struct Edge {
 class Graph {
     Node* nodes;
     Edge* edges;
-    
+
 public: 
+    bool* nodeLocks;
+    
     unsigned long long numNodes, numEdges;
     Graph();
     Node* getNode(uint64_t id);
     Edge* getEdge(uint64_t id);
     void addNode(Node node);
+    void clearLocks();
     bool loadEdgelistFile(const char* file);
 };
 

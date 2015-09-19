@@ -69,9 +69,7 @@ int main(int argc, char** argv) {
         workGenPerCurIter = 0;
         conflictsPerCurIter = 0;
         
-        for(uint64_t i = 0; i < graph->numNodes; i++) {
-            graph->getNode(i)->lock = false;
-        }
+        graph->clearLocks();
         
         if(infCores)
             maxCores = worklist->size();
@@ -86,7 +84,7 @@ int main(int argc, char** argv) {
                 for(int i = 0; i < curNode->numEdges; i++) {
                     Edge* edge = graph->getEdge(curNode->edgePtr + i);
                     Node* destNode = graph->getNode(edge->dest);
-                    if(destNode->lock) {
+                    if(graph->nodeLocks[edge->dest]) {
                         abort = true;
                     }
                 }
@@ -104,7 +102,7 @@ int main(int argc, char** argv) {
                     Edge* edge = graph->getEdge(curNode->edgePtr + i);
                     Node* destNode = graph->getNode(edge->dest);
                     
-                    destNode->lock = true;
+                    graph->nodeLocks[edge->dest] = true;
                     
                     if(curNode->payload + edge->weight < destNode->payload) {
                         destNode->payload = curNode->payload + edge->weight;
