@@ -33,9 +33,11 @@ int main(int argc, char** argv) {
     uint64_t iters = 0;
     uint64_t workPerCurIter = 0;
     uint64_t workGenPerCurIter = 0;
+    uint64_t conflictsPerCurIter = 0;
     uint64_t totalWork = 0;
     uint64_t totalWorkGen = 0;
-    bool infCores = true; //false;
+    uint64_t totalConflicts = 0;
+    bool infCores = false;
     uint64_t maxCores = 128;
     uint64_t maxWork = 0;
     
@@ -58,7 +60,6 @@ int main(int argc, char** argv) {
     
     for(uint64_t i = 0; i < graph->numNodes; i++) {
         graph->getNode(i)->payload = i;
-        std::cout << graph->getNode(i)->numEdges << "\n";
     }
     
     // Initialize worklist
@@ -72,10 +73,14 @@ int main(int argc, char** argv) {
 
     Work work;
     std::vector<uint64_t>* workPerIter = new std::vector<uint64_t>();
-
+    std::vector<uint64_t>* conflictsPerIter = new std::vector<uint64_t>();
+    
     while(worklist->notEmpty()) {
         workPerCurIter = 0;
         workGenPerCurIter = 0;
+        conflictsPerCurIter = 0;
+        
+        graph->clearLocks();
         
         if(infCores)
             maxCores = worklist->size();
@@ -83,11 +88,38 @@ int main(int argc, char** argv) {
         for(int x = 0; x < maxCores; x++) {
             bool hasWork = worklist->getWork(work, x);
             if(hasWork) {
-                Node* curNode = graph->getNode(work.graphId);
+                Node* curNode = NULL;
                 
+                // Check locks
+                bool abort = false;
+                if(graph->nodeLocks[work.graphId]) {
+                    abort = true;
+                }
+                else {
+                    curNode = graph->getNode(work.graphId);
+                    
+                    for(int i = 0; i < curNode->numEdges; i++) {
+                        Edge* edge = graph->getEdge(curNode->edgePtr + i);
+                        Node* destNode = graph->getNode(edge->dest);
+                        if(graph->nodeLocks[edge->dest]) {
+                            abort = true;
+                        }
+                    }
+                }
+                
+                if(abort) {
+                    conflictsPerCurIter++;
+                    totalConflicts++;
+                    worklist->putWork(work, x);
+                    continue;
+                }
+                
+                assert(!abort);
                 for(int i = 0; i < curNode->numEdges; i++) {
                     Edge* edge = graph->getEdge(curNode->edgePtr + i);
                     Node* destNode = graph->getNode(edge->dest);
+                    
+                    graph->nodeLocks[edge->dest] = true;
                     
                     if(curNode->payload < destNode->payload) {
                         destNode->payload = curNode->payload;
@@ -107,6 +139,7 @@ int main(int argc, char** argv) {
             std::cout << "Iter " << iters << ": completed " << workPerCurIter << " work items, max " << maxCores << ", worklist size: " << worklist->size() << ", gen work: " << workGenPerCurIter << ", total gen work: " << totalWorkGen << "\n";
         }
         workPerIter->push_back(workPerCurIter);
+        conflictsPerIter->push_back(conflictsPerCurIter);
         worklist->step();
         iters++;
         
@@ -123,7 +156,7 @@ int main(int argc, char** argv) {
         maxCores = maxWork;
     
     std::cout << "Iters: " << iters << ", totalWork: " << totalWork << ", max cores active: " << maxWork 
-              << ", utilization: " << double(totalWork)/double(iters*maxCores) << std::endl;
+              << ", utilization: " << double(totalWork)/double(iters*maxCores) << ", conflict percent: " << double(totalConflicts)/double(iters*maxCores) << std::endl;
 
     if(genOutput) {
         for(int i = 0; i < graph->numNodes; i++) {
@@ -135,7 +168,7 @@ int main(int argc, char** argv) {
     std::ofstream out2("./stats.csv");
     out2 << "Iteration, Work Completed\n";
     for(int i = 0; i < workPerIter->size(); i++) {
-        out2 << i << ", " << workPerIter->at(i) << "\n";
+      out2 << i << ", " << workPerIter->at(i) << ", " << conflictsPerIter->at(i) << "\n";
     }
     out2.close();
 }

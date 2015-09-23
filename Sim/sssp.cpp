@@ -36,7 +36,8 @@ int main(int argc, char** argv) {
     uint64_t conflictsPerCurIter = 0;
     uint64_t totalWork = 0;
     uint64_t totalWorkGen = 0;
-    bool infCores = true; //false;
+    uint64_t totalConflicts = 0;
+    bool infCores = false;
     uint64_t maxCores = 128;
     uint64_t maxWork = 0;
     
@@ -77,27 +78,35 @@ int main(int argc, char** argv) {
         for(int x = 0; x < maxCores; x++) {
             bool hasWork = worklist->getWork(work, x);
             if(hasWork) {
-                Node* curNode = graph->getNode(work.graphId);
-                
+                Node* curNode = NULL;
                 // Check locks
                 bool abort = false;
-                for(int i = 0; i < curNode->numEdges; i++) {
-                    Edge* edge = graph->getEdge(curNode->edgePtr + i);
-                    Node* destNode = graph->getNode(edge->dest);
-                    if(graph->nodeLocks[edge->dest]) {
-                        abort = true;
+                if(graph->nodeLocks[work.graphId]) {
+                    abort = true;
+                }
+                else {
+                    curNode = graph->getNode(work.graphId);
+                    
+                    for(int i = 0; i < curNode->numEdges; i++) {
+                        Edge* edge = graph->getEdge(curNode->edgePtr + i);
+                        Node* destNode = graph->getNode(edge->dest);
+                        if(graph->nodeLocks[edge->dest]) {
+                            abort = true;
+                        }
                     }
                 }
                 
                 // Someone else is using it, abort and retry later
                 if(abort) {
                     conflictsPerCurIter++;
+                    totalConflicts++;
                     worklist->putWork(work, x);
                     continue;
                 }
                                 
                 // If successful, grab locks and continue
                 assert(!abort);
+                graph->nodeLocks[work.graphId] = true;
                 for(int i = 0; i < curNode->numEdges; i++) {
                     Edge* edge = graph->getEdge(curNode->edgePtr + i);
                     Node* destNode = graph->getNode(edge->dest);
@@ -139,7 +148,7 @@ int main(int argc, char** argv) {
         maxCores = maxWork;
     
     std::cout << "Iters: " << iters << ", totalWork: " << totalWork << ", max cores active: " << maxWork 
-              << ", utilization: " << double(totalWork)/double(iters*maxCores) << std::endl;
+              << ", utilization: " << double(totalWork)/double(iters*maxCores) << ", conflict percent: " << double(totalConflicts)/double(iters*maxCores) << std::endl;
 
     if(genOutput) {
         for(int i = 0; i < graph->numNodes; i++) {
