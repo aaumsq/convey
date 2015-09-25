@@ -204,8 +204,8 @@ void LocalOrderedWorklist::step() {
         }
     }
     
-    std::cout.precision(5);
-    std::cout << "Average local worklist size: " << double(totalLocalSize)/double(numCores) << ", average active local worklist size: " << double(totalLocalSize)/double(activeCores) << ", global worklist size: " << globalWorklist->size() << std::endl;
+    //std::cout.precision(5);
+    //std::cout << "Average local worklist size: " << double(totalLocalSize)/double(numCores) << ", average active local worklist size: " << double(totalLocalSize)/double(activeCores) << ", global worklist size: " << globalWorklist->size() << std::endl;
     //std::cout << "min priority: "<< minPriority << ", max priority: " << maxPriority << ", totalDiff: " << 100.0*double(totalDiff)/double(minPriority) <<  ", avgDiff: " << 100.0*double(totalDiff)/(double(activeCores) * double(minPriority)) << "%\n";
 }
 
