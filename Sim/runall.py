@@ -10,18 +10,19 @@ apps = [["sssp", "0"],
 
 indir = "inputs/";
 
-outfile = open("rollup.csv", "w+");
-outfile.write("Application, Input, Iterations, Total Work, Max Cores Utilized, Utilization Percentage, Conflict Percentage\n");
+outfile = open("rollup.csv", "a+");
+outfile.write("Application, Input, Iterations, Total Work, Max Cores Utilized, Utilization Percentage, Executed Percentage, Conflict Percentage\n");
 
-benchmarks = ["USA-road-d.NY.edgelist",
-              "USA-road-d.FLA.edgelist",
-              "USA-road-d.W.edgelist",
-              "r4-2e18.edgelist",
-              "r4-2e23.edgelist"
+benchmarks = [#"USA-road-d.NY.edgelist",
+              #"USA-road-d.FLA.edgelist",
+              #"USA-road-d.W.edgelist",
+              "USA-road-d.USA.edgelist"
+              #"r4-2e18.edgelist",
+              #"r4-2e23.edgelist"
               ];
 
 
-rollup = re.compile('Iters: (\d+), totalWork: (\d+), max cores active: (\d+), utilization: ([\d\.]+), conflict percent: ([\d\.]+)');
+rollup = re.compile('Iters: (\d+), totalWork: (\d+), max cores active: (\d+), utilization: ([\d\.]+), executed: ([\d\.]+), conflict percent: ([\d\.]+)');
 
 for app in apps:
     for benchmark in benchmarks:

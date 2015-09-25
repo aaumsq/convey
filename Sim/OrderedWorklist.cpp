@@ -1,3 +1,4 @@
+#include <iostream>
 
 #include "OrderedWorklist.h"
 
@@ -8,6 +9,8 @@ OrderedWorklist::OrderedWorklist(unsigned latency, uint64_t bucketSize) {
     timestep = 0;
     this->latency = latency;
     this->bucketSize = bucketSize;
+    
+    std::cout << "OrderedWorklist latency " << latency << ", bucketSize " << bucketSize << std::endl;
 }
 
 bool OrderedWorklist::getWork(Work& work, uint64_t core) {
@@ -22,6 +25,7 @@ bool OrderedWorklist::getWork(Work& work, uint64_t core) {
 
 void OrderedWorklist::putWork(Work work, uint64_t core) {
     work.priority = work.priority/bucketSize;
+    work.timestep = timestep + latency;
     futureWorklist->push(work);
 }
 

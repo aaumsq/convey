@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
     uint64_t conflictsPerCurIter = 0;
     uint64_t totalWork = 0;
     uint64_t totalWorkGen = 0;
+    uint64_t totalConflicts = 0;
     bool infCores = false;
     uint64_t maxCores = 128;
     uint64_t maxWork = 0;
@@ -99,6 +100,7 @@ int main(int argc, char** argv) {
                 // Someone else is using it, abort and retry later
                 if(abort) {
                     conflictsPerCurIter++;
+                    totalConflicts++;
                     worklist->putWork(work, x);
                     continue;
                 }
@@ -146,7 +148,7 @@ int main(int argc, char** argv) {
         maxCores = maxWork;
     
     std::cout << "Iters: " << iters << ", totalWork: " << totalWork << ", max cores active: " << maxWork 
-              << ", utilization: " << double(totalWork)/double(iters*maxCores) << std::endl;
+              << ", utilization: " << double(totalWork)/double(iters*maxCores) <<  ", conflict percent: " << double(totalConflicts)/double(iters*maxCores) << std::endl;
 
     if(genOutput) {
         for(int i = 0; i < graph->numNodes; i++) {

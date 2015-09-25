@@ -10,9 +10,13 @@
 #include "Worklist.h"
 #include "UnorderedWorklist.h"
 #include "LIFO.h"
+#include "RandomWorklist.h"
 #include "OrderedWorklist.h"
 #include "LocalOrderedWorklist.h"
+#include "LocalUnorderedWorklist.h"
 #include "OBIM.h"
+#include "OBIM_HW.h"
+#include "OBIM_HW2.h"
 #include "Graph.h"
 
 int main(int argc, char** argv) {
@@ -32,9 +36,11 @@ int main(int argc, char** argv) {
     }
     uint64_t iters = 0;
     uint64_t workPerCurIter = 0;
+    uint64_t workIssuedPerCurIter = 0;
     uint64_t workGenPerCurIter = 0;
     uint64_t conflictsPerCurIter = 0;
     uint64_t totalWork = 0;
+    uint64_t totalWorkIssued = 0;
     uint64_t totalWorkGen = 0;
     uint64_t totalConflicts = 0;
     bool infCores = false;
@@ -43,10 +49,14 @@ int main(int argc, char** argv) {
     
     Graph* graph = new Graph();
     //Worklist* worklist = new UnorderedWorklist(0);
+    //Worklist* worklist = new RandomWorklist(0);
     //Worklist* worklist = new LIFO(0);
     Worklist* worklist = new OrderedWorklist(0, 1);
-    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10);
-    //Worklist* worklist = new OBIM(128, 10, 10000);
+    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 16, 10);
+    //Worklist* worklist = new LocalUnorderedWorklist(maxCores, 64, 16, 10);
+    //OBIM* worklist = new OBIM(128, 10, 256*1024);
+    //Worklist* worklist = new OBIM_HW(128, 10, 1024, 32);
+    //Worklist* worklist = new OBIM_HW2(128, 10, 8*1024, 128);
     
     std::cout << "Running on " << argv[1] << " with source vertex " << source << std::endl;
     time_t t1, t2, t3;
@@ -68,6 +78,7 @@ int main(int argc, char** argv) {
     while(worklist->notEmpty()) {
         workPerCurIter = 0;
         workGenPerCurIter = 0;
+        workIssuedPerCurIter = 0;
         conflictsPerCurIter = 0;
         
         graph->clearLocks();
@@ -78,6 +89,9 @@ int main(int argc, char** argv) {
         for(int x = 0; x < maxCores; x++) {
             bool hasWork = worklist->getWork(work, x);
             if(hasWork) {
+                workIssuedPerCurIter++;
+                totalWorkIssued++;
+                
                 Node* curNode = NULL;
                 // Check locks
                 bool abort = false;
@@ -128,7 +142,8 @@ int main(int argc, char** argv) {
         }
         
         if(iters % 1000 == 0) {
-            std::cout << "Iter " << iters << ": completed " << workPerCurIter << " work items, max " << maxCores << ", " << conflictsPerCurIter << " conflicts, worklist size: " << worklist->size() << ", gen work: " << workGenPerCurIter << ", total gen work: " << totalWorkGen << "\n";
+            std::cout << "Iter " << iters << ": issued " << workIssuedPerCurIter << ", completed " << workPerCurIter << " work items, max " << maxCores << ", " << conflictsPerCurIter << " conflicts, worklist size: " << worklist->size() << ", gen work: " << workGenPerCurIter << ", total gen work: " << totalWorkGen << "\n";
+            //std::cout << "Iter " << iters << ": completed " << workPerCurIter << " work items, max " << maxCores << ", " << conflictsPerCurIter << " conflicts, worklist size: " << worklist->size() << ", gen work: " << workGenPerCurIter << ", total gen work: " << totalWorkGen << ", num buckets: " << worklist->unorderedWorklists.size() << "\n";
         }
         workPerIter->push_back(workPerCurIter);
         conflictsPerIter->push_back(conflictsPerCurIter);
@@ -148,7 +163,9 @@ int main(int argc, char** argv) {
         maxCores = maxWork;
     
     std::cout << "Iters: " << iters << ", totalWork: " << totalWork << ", max cores active: " << maxWork 
-              << ", utilization: " << double(totalWork)/double(iters*maxCores) << ", conflict percent: " << double(totalConflicts)/double(iters*maxCores) << std::endl;
+              << ", utilization: " << double(totalWorkIssued)/double(iters*maxCores) 
+              << ", executed: " << double(totalWork)/double(iters*maxCores) 
+              << ", conflict percent: " << double(totalConflicts)/double(iters*maxCores) << std::endl;
 
     if(genOutput) {
         for(int i = 0; i < graph->numNodes; i++) {
