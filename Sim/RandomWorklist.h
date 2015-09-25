@@ -1,14 +1,14 @@
 #ifndef __RANDOM_WORKLIST__
 #define __RANDOM_WORKLIST__
 
-#include <deque>
+#include <vector>
 #include <queue>
 
 #include "Worklist.h"
 
 
 class RandomWorklist : public Worklist {
-    std::deque<Work>* worklist;
+    std::vector<Work>* worklist;
     std::priority_queue<Work, std::vector<Work>, CompareTime>* futureWorklist;
     uint64_t timestep;
     unsigned latency;

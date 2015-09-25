@@ -5,7 +5,7 @@
 
 
 RandomWorklist::RandomWorklist(unsigned latency) {
-    worklist = new std::deque<Work>();
+    worklist = new std::vector<Work>();
     futureWorklist = new std::priority_queue<Work, std::vector<Work>, CompareTime>();
     timestep = 0;
     this->latency = latency;
@@ -21,7 +21,8 @@ bool RandomWorklist::getWork(Work& work, uint64_t core) {
     uint32_t idx = rand() % worklist->size();
     
     work = worklist->at(idx);
-    worklist->erase(worklist->begin()+idx);
+    worklist->at(idx) = worklist->back();
+    worklist->pop_back();
     return true;
 }
 
