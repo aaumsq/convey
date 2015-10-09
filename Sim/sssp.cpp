@@ -51,10 +51,10 @@ int main(int argc, char** argv) {
     //Worklist* worklist = new UnorderedWorklist(0);
     //Worklist* worklist = new RandomWorklist(0);
     //Worklist* worklist = new LIFO(0);
-    Worklist* worklist = new OrderedWorklist(0, 1);
-    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 16, 10);
+    //Worklist* worklist = new OrderedWorklist(8, 128*1024);
+    Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10, 128*1024);
     //Worklist* worklist = new LocalUnorderedWorklist(maxCores, 64, 16, 10);
-    //OBIM* worklist = new OBIM(128, 10, 256*1024);
+    //OBIM* worklist = new OBIM(128, 10, 8*1024);
     //Worklist* worklist = new OBIM_HW(128, 10, 1024, 32);
     //Worklist* worklist = new OBIM_HW2(128, 10, 8*1024, 128);
     

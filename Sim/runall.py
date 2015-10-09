@@ -2,10 +2,10 @@
 
 import os, re;
 
-apps = [["sssp", "0"], 
-        ["sssp_optimal", "0"],
-        ["components", ""],
-        ["bfs", "0"]
+apps = [#["sssp", "0"], 
+        ["sssp_optimal", "0"]
+        #["components", ""]
+    #["bfs", "0"]
         ];
 
 indir = "inputs/";
@@ -13,12 +13,12 @@ indir = "inputs/";
 outfile = open("rollup.csv", "a+");
 outfile.write("Application, Input, Iterations, Total Work, Max Cores Utilized, Utilization Percentage, Executed Percentage, Conflict Percentage\n");
 
-benchmarks = [#"USA-road-d.NY.edgelist",
-              #"USA-road-d.FLA.edgelist",
-              #"USA-road-d.W.edgelist",
-              "USA-road-d.USA.edgelist"
-              #"r4-2e18.edgelist",
-              #"r4-2e23.edgelist"
+benchmarks = ["USA-road-d.NY.edgelist",
+              "USA-road-d.FLA.edgelist",
+              "USA-road-d.W.edgelist",
+              "USA-road-d.USA.edgelist",
+              "r4-2e18.edgelist",
+              "r4-2e23.edgelist"
               ];
 
 
@@ -43,5 +43,5 @@ for app in apps:
                 coreUtilization = m.group(4);
                 conflicts = m.group(5);
                 print m.group(1)+", "+m.group(2)+", "+m.group(3)+", "+m.group(4)+", "+m.group(5);
-                outfile.write(app[0]+", "+benchmark+", "+iters+", "+totalWork+", "+maxCores+", "+coreUtilization+", "+conflicts+"\n");
+                outfile.write(app[0]+", "+benchmark+", "+iters+", "+totalWork+", "+maxCores+", "+coreUtilization+", "+conflicts+", "+line);
                 outfile.flush()

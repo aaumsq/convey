@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
     uint64_t workGenPerCurIter = 0;
     uint64_t conflictsPerCurIter = 0;
     uint64_t totalWork = 0;
+    uint64_t totalWorkIssued = 0;
     uint64_t totalWorkGen = 0;
     uint64_t totalConflicts = 0;
     bool infCores = false;
@@ -109,6 +110,8 @@ int main(int argc, char** argv) {
                 hasWork = worklist->getWork(work, x);
                 if(!hasWork)
                     break; 
+                
+                totalWorkIssued++;
                 
                 Node* curNode = graph->getNode(work.graphId);
                 Node* curIdealNode = idealGraph->getNode(work.graphId);
@@ -190,8 +193,10 @@ int main(int argc, char** argv) {
         maxCores = maxWork;
     
     std::cout << "Iters: " << iters << ", totalWork: " << totalWork << ", max cores active: " << maxWork 
-              << ", utilization: " << double(totalWork)/double(iters*maxCores) << ", conflict percent: " << double(totalConflicts)/double(iters*maxCores)<< std::endl;
-
+              << ", utilization: " << double(totalWorkIssued)/double(iters*maxCores) 
+              << ", executed: " << double(totalWork)/double(iters*maxCores) 
+              << ", conflict percent: " << double(totalConflicts)/double(iters*maxCores) << std::endl;
+    
     if(genOutput) {
         for(int i = 0; i < graph->numNodes; i++) {
             out << graph->getNode(i)->id << "," << graph->getNode(i)->payload << "\n";

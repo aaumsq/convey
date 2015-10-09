@@ -13,12 +13,18 @@ class LocalOrderedWorklist : public Worklist {
     std::priority_queue<Work, std::vector<Work>, CompareTime>* futureGlobalWorklist;
     unsigned timestep;
     std::vector<uint64_t>* curPriorities;
+    std::vector<uint64_t>* curWait;
     uint64_t numCores;
     uint64_t localWorkThreshold;
     uint32_t moveLatency;
+    uint32_t bucketSize;
+    std::vector<uint32_t>* globalWrites;
+    uint64_t totalWrites;
+    uint64_t iterations;
+    uint32_t maxWrites;
     
 public:
-    LocalOrderedWorklist(uint64_t numCores, uint64_t localWorkThreshold, uint32_t latency);
+    LocalOrderedWorklist(uint64_t numCores, uint64_t localWorkThreshold, uint32_t latency, uint32_t bucketSize);
     virtual bool getWork(Work& work, uint64_t core);
     virtual void putWork(Work work, uint64_t core);
     virtual void step();
