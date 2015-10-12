@@ -11,14 +11,6 @@ Graph::Graph() {
 
 }
 
-Node* Graph::getNode(uint64_t id) {
-    return &(nodes[id]);
-}
-
-Edge* Graph::getEdge(uint64_t id) {
-    return &(edges[id]);
-}
-
 void Graph::addNode(Node node) {
 
 }

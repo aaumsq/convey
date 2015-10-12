@@ -1,6 +1,7 @@
 #ifndef __GRAPH__
 #define __GRAPH__
 
+#include <iostream>
 #include <stdint.h>
 
 struct Node {
@@ -25,8 +26,12 @@ public:
     
     unsigned long long numNodes, numEdges;
     Graph();
-    Node* getNode(uint64_t id);
-    Edge* getEdge(uint64_t id);
+    inline Node* getNode(uint64_t id) {
+        return nodes + id;
+    }
+    inline Edge* getEdge(uint64_t id) {
+        return edges + id;
+    }
     void addNode(Node node);
     void clearLocks();
     bool loadEdgelistFile(const char* file);
