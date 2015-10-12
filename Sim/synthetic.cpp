@@ -96,21 +96,6 @@ int main(int argc, char** argv) {
         regs[i].fields.umask = WSMEvents[i].umask;
     }
     
-    /*
-    // L1 hits
-    regs[0].fields.event_select = 0x80;
-    regs[0].fields.umask = 0x01;
-    // L1 misses
-    regs[1].fields.event_select = 0x80;
-    regs[1].fields.umask = 0x02;
-    // L1 reads
-    regs[2].fields.event_select = 0x80;
-    regs[2].fields.umask = 0x03;
-    // L1 cycle stalls
-    regs[3].fields.event_select = 0x80;
-    regs[3].fields.umask = 0x04;
-    */
-    
     PCM::ErrorCode status = m->program(PCM::EXT_CUSTOM_CORE_EVENTS, &conf);
     switch(status) {
     case PCM::Success:
@@ -136,32 +121,66 @@ int main(int argc, char** argv) {
     std::cerr << "\nDetected "<< m->getCPUBrandString() << " \"Intel(r) microarchitecture codename "<<m->getUArchCodename()<<"\"\n";
     
     
-    SystemCounterState before_sstate = getSystemCounterState();
-
-    Work work;
+    unsigned num = 10;
+    uint64_t nodeIdx[num];
+    uint64_t sums[num];
+    Node* curNodes[num];
+    Edge* edges[num];
     
-    uint64_t idealIters = 0;
-    uint64_t idealWork = 0;
-    while(!wl.empty()) {
-        //idealIters++;
-        work = wl.top();
-        wl.pop();
-        Node* curNode = graph->getNode(work.graphId);
-        for(int i = 0; i < curNode->numEdges; i++) {
-            Edge* edge = graph->getEdge(curNode->edgePtr + i);
-            Node* destNode = graph->getNode(edge->dest);
-            if(curNode->payload + edge->weight < destNode->payload) {
-                destNode->payload = curNode->payload + edge->weight;
-                Work newWork = {edge->dest, destNode->payload/50000, iters+1};
-                wl.push(newWork);
-                //idealWork++;
-            }
+    std::cout << "Inputs: ";
+    for(int i = 0; i < num; i++) {
+        nodeIdx[i] = source+i;
+        sums[i] = 0;
+        std::cout << nodeIdx[i] << " ";
+    }
+    std::cout << "\n";
+
+    std::cout << "Trying to initialize array\n";
+    
+    uint32_t arraySize = 64*1024*1024; // 64M-entries
+    uint32_t* array = new uint32_t[arraySize]();
+    for(int i = 0; i < arraySize; i++) {
+        array[i] = rand() % arraySize;
+    }
+    uint64_t arraySums[num];
+    uint64_t lastArray[num];
+    for(int i = 0; i < num; i++) {
+        arraySums[i] = 0;
+        lastArray[i] = rand() % arraySize;
+    }
+    std::cout << "Starting...\n";
+
+    SystemCounterState before_sstate = getSystemCounterState();
+    
+    for(uint64_t i = 0; i < 10000000; i++) {
+        for(int j = 0; j < num; j++) {
+            lastArray[j] = array[lastArray[j]];
+            arraySums[j] += lastArray[j];
         }
     }
-    std::cout << "IdealIters: " << idealIters << ", IdealWork: " << idealWork << "\n";
     
-    
+    /*
+    for(uint64_t i = 0; i < 100000000; i++) {
+        for(int j = 0; j < num; j++) {
+            curNodes[j] = graph->getNode(nodeIdx[j]);
+        }
+        for(int j = 0; j < num; j++) {
+            edges[j] = graph->getEdge(curNodes[j]->edgePtr);
+        }
+        for(int j = 0; j < num; j++) {
+            sums[j] += edges[j]->weight;
+            nodeIdx[j] = edges[j]->dest;
+        }
+    }    
+    */
     SystemCounterState after_sstate = getSystemCounterState();
+    
+    
+    std::cout << "Results: ";
+    for(int i = 0; i < num; i++) {
+        std::cout << arraySums[i] << " ";
+    }
+    std::cout << "\n";
     
     uint64_t insts = getInstructionsRetired(before_sstate, after_sstate);
 

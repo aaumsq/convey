@@ -9,6 +9,12 @@ sssp_optimal:
 
 sssp_dijkstra:
 	g++ -g sssp_dijkstra.cpp Graph.cpp -I $(INTELPCM) $(INTELPCM)/client_bw.o $(INTELPCM)/cpucounters.o $(INTELPCM)/msr.o $(INTELPCM)/pci.o -lpthread -lrt -std=c++0x
+	sudo /opt/perfmon/enable-msr.sh
+	sudo /opt/opencpi/bin/fpga-bless.sh a.out
+
+synthetic:
+	g++ -g synthetic.cpp Graph.cpp -I $(INTELPCM) $(INTELPCM)/client_bw.o $(INTELPCM)/cpucounters.o $(INTELPCM)/msr.o $(INTELPCM)/pci.o -lpthread -lrt -std=c++0x
+	sudo /opt/perfmon/enable-msr.sh
 	sudo /opt/opencpi/bin/fpga-bless.sh a.out
 
 components:
