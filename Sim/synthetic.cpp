@@ -23,6 +23,7 @@ PCMEvent WSMEvents[4] = {
     {"RESOURCE_STALLS.ANY", 0xA2, 0x01, "Allocator resource related stalls, including PRF, LSQ, branch mispred, etc."},
     {"RESOURCE_STALLS.LOAD", 0xA2, 0x02, "Stall cycles due to lack of load buffer entries"},
     {"RESOURCE_STALLS.RS_FULL", 0xA2, 0x04, "Stall cycles due to lack of reservation station entries"},
+    //{"L1D.PEND_MISS.PENDING", 0x48, 0x01, "Increments the number of outstanding L1D misses every cycle. Set Cmask = 1 and Edge = 1 to count occurrences"}
     {"RESOURCE_STALLS.ROB_FULL", 0xA2, 0x10, "Stall cycles due to lack of ROB entries"}
     /*
     {"LOAD_BLOCK.L1D", 0x03, 0x20, "Loads blocked by the L1 data cache, e.g. too many outstanding misses"},
@@ -137,7 +138,7 @@ int main(int argc, char** argv) {
 
     std::cout << "Trying to initialize array\n";
     
-    uint32_t arraySize = 64*1024*1024; // 64M-entries
+    uint32_t arraySize = 128*1024*1024; // 64M-entries
     uint32_t* array = new uint32_t[arraySize]();
     for(int i = 0; i < arraySize; i++) {
         array[i] = rand() % arraySize;
@@ -183,14 +184,19 @@ int main(int argc, char** argv) {
     std::cout << "\n";
     
     uint64_t insts = getInstructionsRetired(before_sstate, after_sstate);
+    uint64_t cycles = getCycles(before_sstate, after_sstate);
 
     for(int i = 0; i < 4; i++) {
         uint64_t counter = getNumberOfCustomEvents(i, before_sstate, after_sstate);
-        std::cout << WSMEvents[i].name << ": " << counter << ", PKI: " << double(counter)*1000.0/double(insts) << "\n";
+        std::cout << WSMEvents[i].name << ": " << counter 
+                  << ", PKI: " << double(counter)*1000.0/double(insts) 
+                  << ", PKC: " << double(counter)*1000.0/double(cycles) << "\n";
     }
     
     std::cout << "Instructions retired: " << insts << "\n";
+    std::cout << "Cycles: " << cycles << "\n";
     std::cout << "IPC: " << getIPC(before_sstate, after_sstate) << "\n";
+    std::cout << "Calc IPC: " << double(insts)/double(cycles) << "\n";
     /*
     std::cout << "Instructions per clock: " << getIPC(before_sstate,after_sstate)
               << "\nL3 cache hit ratio: " << getL3CacheHitRatio(before_sstate,after_sstate)
