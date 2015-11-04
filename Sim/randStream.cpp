@@ -15,8 +15,12 @@ PCMEvent WSMEvents[4] = {
     {"RESOURCE_STALLS.ANY", 0xA2, 0x01, "Allocator resource related stalls, including PRF, LSQ, branch mispred, etc."},
     {"RESOURCE_STALLS.LOAD", 0xA2, 0x02, "Stall cycles due to lack of load buffer entries"},
     {"RESOURCE_STALLS.RS_FULL", 0xA2, 0x04, "Stall cycles due to lack of reservation station entries"},
+    //{"RESOURCE_STALLS.STORE", 0xA2, 0x08, "Stall cycles due to lack of store buffer entries"},
     //{"L1D.PEND_MISS.PENDING", 0x48, 0x01, "Increments the number of outstanding L1D misses every cycle. Set Cmask = 1 and Edge = 1 to count occurrences"}
-    {"RESOURCE_STALLS.ROB_FULL", 0xA2, 0x10, "Stall cycles due to lack of ROB entries"}
+    {"RESOURCE_STALLS.ROB_FULL", 0xA2, 0x10, "Stall cycles due to lack of ROB entries"},
+    //{"RESOURCE_STALLS.FPCW", 0xA2, 0x20, "Stall cycles due to FPU control word write"},
+    //{"RESOURCE_STALLS.MXCSR", 0xA2, 0x40, "Stall cycles due to MXCSR register rename occurring too close to another MXCSR rename"},
+    //{"RESOURCE_STALLS.OTHER", 0xA2, 0x80, "Stall cycles due to other stalls, e.g. TAP, MOSBDrain, MS-uip"}
     /*
     {"LOAD_BLOCK.L1D", 0x03, 0x20, "Loads blocked by the L1 data cache, e.g. too many outstanding misses"},
     {"DTLB_MISSES.ANY", 0x08, 0x01, "Memory accesses that missed the DTLB"},

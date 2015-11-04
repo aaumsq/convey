@@ -78,8 +78,13 @@ void printStats(PCMEvent* WSMEvents, SystemCounterState before_sstate, SystemCou
     std::cout << "Calc IPC: " << double(insts)/double(cycles) << "\n";
     
     std::cout << "Instructions per clock: " << getIPC(before_sstate,after_sstate)
+              << "\nL2 cache hit ratio: " << getL2CacheHitRatio(before_sstate,after_sstate)
               << "\nL3 cache hit ratio: " << getL3CacheHitRatio(before_sstate,after_sstate)
-              << "\nBytes read: " << getBytesReadFromMC(before_sstate,after_sstate)
+              << "\nL2 cache hits: " << getL2CacheHits(before_sstate,after_sstate)
+              << "\nL3 cache hits: " << getL3CacheHits(before_sstate,after_sstate)
+              << "\nWasted cycles caused by L2 misses: " << getCyclesLostDueL2CacheMisses(before_sstate,after_sstate)
+	      << "\nWasted cycles caused by L3 misses: " << getCyclesLostDueL3CacheMisses(before_sstate,after_sstate)
+              << "\nBytes read from DRAM: " << getBytesReadFromMC(before_sstate,after_sstate)
               << "\n";
 }
 
