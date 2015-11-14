@@ -27,7 +27,7 @@ bfs:
 	g++ bfs.cpp UnorderedWorklist.cpp LIFO.cpp OrderedWorklist.cpp RandomWorklist.cpp LocalOrderedWorklist.cpp LocalUnorderedWorklist.cpp OBIM.cpp OBIM_HW.cpp OBIM_HW2.cpp Graph.cpp
 
 dij:
-	g++ CRS.cpp sssp_dij.cpp
+	g++ CRS.cpp Graph.cpp sssp_dijkstra.cpp -I $(INTELPCM) $(INTELPCM)/client_bw.o $(INTELPCM)/cpucounters.o $(INTELPCM)/msr.o $(INTELPCM)/pci.o -lpthread -lrt -std=c++0x
 
 # ----------------------------------------------------------------
 .PHONY: clean
