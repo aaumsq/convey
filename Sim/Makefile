@@ -21,13 +21,13 @@ randStream:
 	g++ -O3 -g randStream.cpp Graph.cpp -I $(INTELPCM) $(INTELPCM)/client_bw.o $(INTELPCM)/cpucounters.o $(INTELPCM)/msr.o $(INTELPCM)/pci.o -lpthread -lrt -std=c++0x
 
 components:
-	g++ connectedcomponents.cpp UnorderedWorklist.cpp LIFO.cpp RandomWorklist.cpp OrderedWorklist.cpp LocalOrderedWorklist.cpp LocalUnorderedWorklist.cpp OBIM.cpp OBIM_HW.cpp OBIM_HW2.cpp Graph.cpp
+	g++ -O3 connectedcomponents.cpp UnorderedWorklist.cpp LIFO.cpp RandomWorklist.cpp OrderedWorklist.cpp LocalOrderedWorklist.cpp LocalUnorderedWorklist.cpp OBIM.cpp OBIM_HW.cpp OBIM_HW2.cpp Graph.cpp
 
 bfs:
-	g++ bfs.cpp UnorderedWorklist.cpp LIFO.cpp OrderedWorklist.cpp RandomWorklist.cpp LocalOrderedWorklist.cpp LocalUnorderedWorklist.cpp OBIM.cpp OBIM_HW.cpp OBIM_HW2.cpp Graph.cpp
+	g++ -O3 bfs.cpp UnorderedWorklist.cpp LIFO.cpp OrderedWorklist.cpp RandomWorklist.cpp LocalOrderedWorklist.cpp LocalUnorderedWorklist.cpp OBIM.cpp OBIM_HW.cpp OBIM_HW2.cpp Graph.cpp
 
 dij:
-	g++ CRS.cpp Graph.cpp sssp_dijkstra.cpp -I $(INTELPCM) $(INTELPCM)/client_bw.o $(INTELPCM)/cpucounters.o $(INTELPCM)/msr.o $(INTELPCM)/pci.o -lpthread -lrt -std=c++0x
+	g++ -O3 -g CRS.cpp Graph.cpp sssp_dijkstra.cpp -I $(INTELPCM) $(INTELPCM)/client_bw.o $(INTELPCM)/cpucounters.o $(INTELPCM)/msr.o $(INTELPCM)/pci.o -lpthread -lrt -std=c++0x
 
 # ----------------------------------------------------------------
 .PHONY: clean
