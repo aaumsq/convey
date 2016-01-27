@@ -1,7 +1,7 @@
 #ifndef __PCM_H__
 #define __PCM_H__
 
-
+#include <stdio.h>
 #include <cpucounters.h>
 
 struct PCMEvent {
@@ -12,9 +12,22 @@ struct PCMEvent {
 };
 
 PCM* m;
+SystemCounterState SysBeforeState, SysAfterState;
+//const uint32 ncores = m->getNumCores();
+std::vector<CoreCounterState> BeforeState, AfterState;
+std::vector<SocketCounterState> DummySocketStates;
+
+void getBeforeStates() {
+    m->getAllCounterStates(SysBeforeState, DummySocketStates, BeforeState);
+}
+
+void getAfterStates() {
+    m->getAllCounterStates(SysAfterState, DummySocketStates, AfterState);
+}
 
 void initPCM(PCMEvent* WSMEvents) {
     m = PCM::getInstance();
+    m->resetPMU();
     
     PCM::ExtendedCustomCoreEventDescription conf;
     conf.fixedCfg = NULL; // default
@@ -58,6 +71,83 @@ void initPCM(PCMEvent* WSMEvents) {
     
     std::cerr << "\nDetected "<< m->getCPUBrandString() << " \"Intel(r) microarchitecture codename "<<m->getUArchCodename()<<"\"\n";
     
+}
+
+void printCoreStats(PCMEvent* WSMEvents) {
+    uint32_t numCores = m->getNumCores();
+    uint64_t sum = 0;
+
+    // Find critical path
+    uint64_t max = 0;
+    uint32_t maxIdx = -1;
+    for(int i = 0; i < numCores; i++) {
+        uint64_t cycles = getCycles(BeforeState[i], AfterState[i]);
+        if(cycles > max) {
+            max = cycles;
+            maxIdx = i;
+        }
+    }
+    
+    std::cout << std::setw(20) << "Name" << " | ";
+    for(int i = 0; i < numCores; i++) {
+        if(maxIdx == i) {
+            std::cout << std::setw(9) << "*Core " << i << "* | ";
+        }
+        else{ 
+            std::cout << std::setw(10) << "Core " << i << " | ";
+        }
+    }
+    std::cout << std::setw(12) << "Sum\n";
+
+    std::cout << std::setw(20) << "Instructions" << " | ";
+    sum = 0;
+    for(int i = 0; i < numCores; i++) {
+        uint64_t insts = getInstructionsRetired(BeforeState[i], AfterState[i]);
+        std::cout << std::setw(11) << insts << " | ";
+        sum += insts;
+    }
+    std::cout << std::setw(11) << sum << "\n";
+
+    std::cout << std::setw(20) << "Cycles" << " | ";
+    sum = 0;
+    for(int i = 0; i < numCores; i++) {
+        uint64_t cycles = getCycles(BeforeState[i], AfterState[i]);
+        std::cout << std::setw(11) << cycles << " | ";
+        sum += cycles;
+    }
+    std::cout << std::setw(11) << sum << "\n";
+    
+    std::cout << std::setw(20) << "IPC" << " | ";
+    sum = 0;
+    uint64_t sumCycles = 0;
+    for(int i = 0; i < numCores; i++) {
+        uint64_t insts = getInstructionsRetired(BeforeState[i], AfterState[i]);
+        uint64_t cycles = getCycles(BeforeState[i], AfterState[i]);
+        double ipc = (double)insts/(double)cycles;
+        std::cout << std::setw(11) << ipc << " | ";
+        sum += insts;
+        sumCycles += cycles;
+    }
+    std::cout << std::setw(11) << double(sum)/double(sumCycles) << "\n";
+    
+    for(int i = 0; i < 4; i++) {
+        std::cout << std::setw(20) << WSMEvents[i].name << " | ";
+        sum = 0;
+        for(int j = 0; j < numCores; j++) {
+            uint64_t counter = getNumberOfCustomEvents(i, BeforeState[j], AfterState[j]);
+            std::cout << std::setw(11) << counter << " | "; 
+            sum += counter;
+        }
+        std::cout << std::setw(11) << sum << "\n";
+    }
+
+    
+    uint64_t insts = getInstructionsRetired(SysBeforeState, SysAfterState);
+    uint64_t critCycles = getCycles(BeforeState[maxIdx], AfterState[maxIdx]);
+    uint64_t cycles = getCycles(SysBeforeState, SysAfterState);
+    std::cout << "\nCritical path cycles: " << critCycles << "\n";
+    std::cout << "\nTotal instructions: " << insts << "\n";
+    std::cout << "Total cycles: " << cycles << "\n\n";
 }
 
 void printStats(PCMEvent* WSMEvents, SystemCounterState before_sstate, SystemCounterState after_sstate) {
