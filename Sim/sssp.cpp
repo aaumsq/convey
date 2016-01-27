@@ -12,6 +12,7 @@
 #include "LIFO.h"
 #include "RandomWorklist.h"
 #include "OrderedWorklist.h"
+#include "ClusteredPushWorklist.h"
 #include "LocalOrderedWorklist.h"
 #include "LocalUnorderedWorklist.h"
 #include "OBIM.h"
@@ -51,8 +52,9 @@ int main(int argc, char** argv) {
     //Worklist* worklist = new UnorderedWorklist(0);
     //Worklist* worklist = new RandomWorklist(0);
     //Worklist* worklist = new LIFO(0);
-    //Worklist* worklist = new OrderedWorklist(8, 128*1024);
-    Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10, 128*1024);
+    //Worklist* worklist = new OrderedWorklist(8, 4*1024);
+    Worklist* worklist = new ClusteredPushWorklist(maxCores, 4, 10);
+    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10, 16*1024);
     //Worklist* worklist = new LocalUnorderedWorklist(maxCores, 64, 16, 10);
     //OBIM* worklist = new OBIM(128, 10, 8*1024);
     //Worklist* worklist = new OBIM_HW(128, 10, 1024, 32);
