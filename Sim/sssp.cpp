@@ -22,17 +22,19 @@
 
 int main(int argc, char** argv) {
     
-    if((argc != 3) && (argc != 5)) {
+    if((argc != 5) && (argc != 7)) {
         std::cout << "ERROR: incorrect input parameters!\n";
-        std::cout << argv[0] << " <input file name> <source vertex>\n-- OR --\n";
-        std::cout << argv[0] << " <input file name> <source vertex> -out <output file name>" << std::endl;
+        std::cout << argv[0] << " <cores> <bucket> <input file name> <source vertex>\n-- OR --\n";
+        std::cout << argv[0] << " <cores> <bucket> <input file name> <source vertex> -out <output file name>" << std::endl;
         exit(1);
     }
-    
-    unsigned source = atoi(argv[2]);
+
+    unsigned maxCores = atoi(argv[1]);
+    unsigned bucketSize = atoi(argv[2]);
+    unsigned source = atoi(argv[4]);
     bool genOutput = false;
-    std::ofstream out(argv[4]);
-    if(argc == 5) {
+    std::ofstream out(argv[6]);
+    if(argc == 7) {
         genOutput = true;
     }
     uint64_t iters = 0;
@@ -45,26 +47,25 @@ int main(int argc, char** argv) {
     uint64_t totalWorkGen = 0;
     uint64_t totalConflicts = 0;
     bool infCores = false;
-    uint64_t maxCores = 128;
     uint64_t maxWork = 0;
     
     Graph* graph = new Graph();
     //Worklist* worklist = new UnorderedWorklist(0);
     //Worklist* worklist = new RandomWorklist(0);
     //Worklist* worklist = new LIFO(0);
-    //Worklist* worklist = new OrderedWorklist(8, 4*1024);
-    Worklist* worklist = new ClusteredPushWorklist(maxCores, 4, 10);
-    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10, 16*1024);
+    //Worklist* worklist = new OrderedWorklist(10, bucketSize);
+    //Worklist* worklist = new ClusteredPushWorklist(maxCores, 4, 10);
+    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10, bucketSize);
     //Worklist* worklist = new LocalUnorderedWorklist(maxCores, 64, 16, 10);
-    //OBIM* worklist = new OBIM(128, 10, 8*1024);
+    OBIM* worklist = new OBIM(maxCores, 10, bucketSize);
     //Worklist* worklist = new OBIM_HW(128, 10, 1024, 32);
     //Worklist* worklist = new OBIM_HW2(128, 10, 8*1024, 128);
     
-    std::cout << "Running on " << argv[1] << " with source vertex " << source << std::endl;
+    std::cout << "Running on " << argv[3] << " with source vertex " << source << std::endl;
     time_t t1, t2, t3;
     t1 = time(NULL);
     
-    graph->loadEdgelistFile(argv[1]);
+    graph->loadEdgelistFile(argv[3]);
     
     std::cout << "Done loading\n";
 
