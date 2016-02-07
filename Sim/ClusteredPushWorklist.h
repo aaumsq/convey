@@ -7,7 +7,7 @@
 #include "Worklist.h"
 
 class ClusteredPushWorklist : public Worklist {
-    std::vector<std::queue<Work>* > *localWorklist;
+    std::vector<std::priority_queue<Work, std::vector<Work>, ComparePriority>* > *localWorklist;
     std::vector<std::priority_queue<Work, std::vector<Work>, CompareTime>* > *futureLocalWorklist;
     unsigned timestep;
     uint64_t numCores;

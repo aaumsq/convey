@@ -13,12 +13,12 @@ ClusteredPushWorklist::ClusteredPushWorklist(uint64_t numCores, uint32_t cluster
     this->latency = latency;
     this->packetSize = packetSize;
     
-    localWorklist = new std::vector<std::queue<Work>* >();
+    localWorklist = new std::vector<std::priority_queue<Work, std::vector<Work>, ComparePriority>* >();
     futureLocalWorklist = new std::vector<std::priority_queue<Work, std::vector<Work>, CompareTime>* >();
     
     assert(numCores % clusterSize == 0);
     for(int i = 0; i < numCores/clusterSize; i++) {
-        std::queue<Work>* tmplw = new std::queue<Work>();
+        std::priority_queue<Work, std::vector<Work>, ComparePriority>* tmplw = new std::priority_queue<Work, std::vector<Work>, ComparePriority>();
         std::priority_queue<Work, std::vector<Work>, CompareTime>* tmpflw = new std::priority_queue<Work, std::vector<Work>, CompareTime>();
         localWorklist->push_back(tmplw);
         futureLocalWorklist->push_back(tmpflw);
@@ -34,17 +34,26 @@ bool ClusteredPushWorklist::getWork(Work& work, uint64_t core) {
         return false;
     }
     
-    work = localWorklist->at(cluster)->front();
+    work = localWorklist->at(cluster)->top();
     localWorklist->at(cluster)->pop();
     return true;
 }
 
 void ClusteredPushWorklist::putWork(Work work, uint64_t core) {
+    work.priority = work.priority;
+    work.timestep = timestep + latency;
+    
     // Push to random cluster worklist
     uint64_t randCore = rand() % numCores;
-    uint64_t cluster = randCore / clusterSize;
-    
-    futureLocalWorklist->at(cluster)->push(work);
+    uint64_t randCluster = randCore / clusterSize;
+    uint64_t curCluster = core / clusterSize;
+
+    if(localWorklist->at(curCluster)->size() >= 0) {
+      futureLocalWorklist->at(randCluster)->push(work);
+    }
+    else {
+      futureLocalWorklist->at(curCluster)->push(work);  
+    }
     //std::cout << "Core " << core << " pushing packet to local, size = " << size << "\n";
 }
 
