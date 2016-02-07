@@ -42,20 +42,20 @@ LocalOrderedWorklist::LocalOrderedWorklist(uint64_t numCores, uint64_t localWork
 }
 
 bool LocalOrderedWorklist::getWork(Work& work, uint64_t core) {
-    if((curWait->at(core) == 0) && (localWorklist->at(core)->size() < 10)) {
+    if((curWait->at(core) == 0) && (localWorklist->at(core)->size() < std::max<int>(2, moveLatency))) {
       
         // request data from global worklist
         int packets = 0;
         uint64_t globalPriority = globalWorklist->empty() ? 0 : globalWorklist->top().priority;
         
-        while(!globalWorklist->empty() && (packets < 4) && (globalWorklist->top().priority == globalPriority)) {
+        while(!globalWorklist->empty() && (packets < std::min<int>(moveLatency/2+1, 4)) && (globalWorklist->top().priority == globalPriority)) {
             Work newWork = globalWorklist->top();
             newWork.timestep += moveLatency;
             futureLocalWorklist->at(core)->push(newWork);
             globalWorklist->pop();
             packets++;
         }
-        curWait->at(core) = 10;
+        curWait->at(core) = moveLatency;
         
         //return false;
     }
@@ -76,20 +76,19 @@ void LocalOrderedWorklist::putWork(Work work, uint64_t core) {
     uint64_t size = localWorklist->at(core)->size();
     //uint64_t size = localWorklist->at(core)->size() + futureLocalWorklist->at(core)->size();
     //bool push = (rand() % localWorkThreshold)*6 < size;
-    
     work.priority = work.priority/bucketSize;
     uint64_t minPriority = (size==0) ? 0 : localWorklist->at(core)->top().priority;
     
-    bool push = (work.priority > minPriority); // && (size > 1);
+    bool push = (work.priority > minPriority);
     
     // Push to global
     if(push || (size >= localWorkThreshold)) {
-        Work toGlobal = work;
-        work.timestep = work.timestep + moveLatency;
+        work.timestep = timestep + moveLatency;
         futureGlobalWorklist->push(work);
     }
     // Push to local
     else {
+        work.timestep = timestep;
         futureLocalWorklist->at(core)->push(work);
     }
 }
@@ -122,7 +121,7 @@ void LocalOrderedWorklist::step() {
     globalWrites->push_back(val);
     totalWrites += val;
     iterations++;
-    std::cout << "Wrote " << val << " entries, avg = " << double(totalWrites)/double(iterations) << ", max = " << maxWrites << std::endl;
+    //std::cout << "Wrote " << val << " entries, avg = " << double(totalWrites)/double(iterations) << ", max = " << maxWrites << std::endl;
     /*
     // Calculate stats
     uint64_t minPriority = -1;
