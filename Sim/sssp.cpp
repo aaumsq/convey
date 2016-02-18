@@ -14,6 +14,7 @@
 #include "OrderedWorklist.h"
 #include "ClusteredPushWorklist.h"
 #include "LocalOrderedWorklist.h"
+#include "Minnow.h"
 #include "LocalUnorderedWorklist.h"
 #include "OBIM.h"
 #include "OBIM_HW.h"
@@ -22,19 +23,21 @@
 
 int main(int argc, char** argv) {
     
-    if((argc != 5) && (argc != 7)) {
+    if((argc != 6) && (argc != 8)) {
         std::cout << "ERROR: incorrect input parameters!\n";
-        std::cout << argv[0] << " <cores> <bucket> <input file name> <source vertex>\n-- OR --\n";
-        std::cout << argv[0] << " <cores> <bucket> <input file name> <source vertex> -out <output file name>" << std::endl;
+        std::cout << argv[0] << " <cores> <bucket> <latency> <input file name> <source vertex>\n-- OR --\n";
+        std::cout << argv[0] << " <cores> <bucket> <latency> <input file name> <source vertex> -out <output file name>" << std::endl;
         exit(1);
     }
 
     unsigned maxCores = atoi(argv[1]);
     unsigned bucketSize = atoi(argv[2]);
-    unsigned source = atoi(argv[4]);
+    unsigned latency = atoi(argv[3]);
+    char* file = argv[4];
+    unsigned source = atoi(argv[5]);
     bool genOutput = false;
-    std::ofstream out(argv[6]);
-    if(argc == 7) {
+    std::ofstream out(argv[7]);
+    if(argc == 8) {
         genOutput = true;
     }
     uint64_t iters = 0;
@@ -53,19 +56,20 @@ int main(int argc, char** argv) {
     //Worklist* worklist = new UnorderedWorklist(0);
     //Worklist* worklist = new RandomWorklist(0);
     //Worklist* worklist = new LIFO(0);
-    //Worklist* worklist = new OrderedWorklist(10, bucketSize);
-    //Worklist* worklist = new ClusteredPushWorklist(maxCores, 4, 10);
-    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10, bucketSize);
+    //Worklist* worklist = new OrderedWorklist(latency, bucketSize);
+    //Worklist* worklist = new ClusteredPushWorklist(maxCores, 4, latency);
+    //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, latency, bucketSize);
+    Worklist* worklist = new Minnow(maxCores, 1, 64, latency, bucketSize);
     //Worklist* worklist = new LocalUnorderedWorklist(maxCores, 64, 16, 10);
-    OBIM* worklist = new OBIM(maxCores, 10, bucketSize);
+    //OBIM* worklist = new OBIM(maxCores, latency, bucketSize);
     //Worklist* worklist = new OBIM_HW(128, 10, 1024, 32);
     //Worklist* worklist = new OBIM_HW2(128, 10, 8*1024, 128);
     
-    std::cout << "Running on " << argv[3] << " with source vertex " << source << std::endl;
+    std::cout << "Running on " << file << " with source vertex " << source << std::endl;
     time_t t1, t2, t3;
     t1 = time(NULL);
     
-    graph->loadEdgelistFile(argv[3]);
+    graph->loadEdgelistFile(file);
     
     std::cout << "Done loading\n";
 
