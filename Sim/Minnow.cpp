@@ -117,11 +117,11 @@ bool Minnow::getWork(Work& work, uint64_t core) {
     uint64_t globalPriority = globalWorklist.empty() ? 0 : globalWorklist.top().priority;
     
     // If highest priority buffer doesn't have enough work, try to stream
-    if((curWait[core] == 0) && (localSize(core, headIdx) < std::max<int>(2, latency))) {
+    if((curWait[core] == 0) && (localSize(core, headIdx) < std::max<int>(1, latency))) {
         //std::cout << "  Try to stream, " << localSize(core, headIdx) << " < " << std::max<int>(2, latency) << "\n";
         for(uint64_t i = 0; i < numLocalBufs; i++) {
             uint64_t idx = (headIdx + i) % numLocalBufs;
-            if(localEmpty(core, idx) || (!localEmpty(core, idx) && bucketPriority[core][idx] <= globalPriority)) {
+            if(localEmpty(core, idx) || (!localEmpty(core, idx) && globalPriority <= bucketPriority[core][idx])) {
                 uint64_t packets = 0;
                 while(!globalWorklist.empty() && 
                       (packets < std::min<int>(latency/2+1, 4)) &&
@@ -161,6 +161,9 @@ bool Minnow::getWork(Work& work, uint64_t core) {
             if(!localWorklist[core][idx].empty()) {
                 work = localWorklist[core][idx].front();
                 localWorklist[core][idx].pop();
+                
+                if(localEmpty(core, headIdx))
+                    localHeadIdx[core] = idx;
                 //std::cout << "  Got localWorklist[" << core << "][" << idx << "] priority " << work.priority << "\n";
                 return true;
             }
@@ -191,7 +194,7 @@ void Minnow::putWork(Work work, uint64_t core) {
         return;
         //std::cout << "  All empty, adding to headIdx " << headIdx << "\n";
     }
-    else if(bucketPriority[core][headIdx] <= work.priority) {
+    else if(work.priority <= bucketPriority[core][headIdx]) {
         enqLocal(core, headIdx, work);
         
         //std::cout << "  Adding to headIdx " << headIdx << ", bucketPriority " << bucketPriority[core][headIdx] << "->" <<work.priority <<"\n";
@@ -203,7 +206,7 @@ void Minnow::putWork(Work work, uint64_t core) {
         uint64_t priorityDiff = work.priority - bucketPriority[core][headIdx];
         for(uint64_t i = 1; i < numLocalBufs; i++) {
             uint64_t idx = (headIdx + i) % numLocalBufs;
-            if(enabled[core][idx]) {
+            if(!localEmpty(core, idx)) {
                 if(bucketPriority[core][idx] <= work.priority) {
                     enqLocal(core, idx, work);
                     //std::cout << "  Adding to buf " << idx << ", bucketPriority " << bucketPriority[core][idx] << "->" <<work.priority <<"\n";
@@ -212,7 +215,7 @@ void Minnow::putWork(Work work, uint64_t core) {
                 }
             }
             else {
-                if(work.priority - bucketPriority[core][idx] <= i) {
+                if(work.priority - bucketPriority[core][headIdx] <= i) {
                     enqLocal(core, idx, work);
                     bucketPriority[core][idx] = work.priority;
                     //std::cout << "  Creating buf " << idx << ", bucketPriority " << bucketPriority[core][idx] << "\n";
