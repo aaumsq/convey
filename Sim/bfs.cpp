@@ -13,21 +13,26 @@
 #include "OrderedWorklist.h"
 #include "LocalOrderedWorklist.h"
 #include "OBIM.h"
+#include "Minnow.h"
 #include "Graph.h"
 
 int main(int argc, char** argv) {
     
-    if((argc != 3) && (argc != 5)) {
+    if((argc != 6) && (argc != 8)) {
         std::cout << "ERROR: incorrect input parameters!\n";
-        std::cout << argv[0] << " <input file name> <source vertex>\n-- OR --\n";
-        std::cout << argv[0] << " <input file name> <source vertex> -out <output file name>" << std::endl;
+        std::cout << argv[0] << " <cores> <bucket> <latency> <input file name> <source vertex>\n-- OR --\n";
+        std::cout << argv[0] << " <cores> <bucket> <latency> <input file name> <source vertex> -out <output file name>" << std::endl;
         exit(1);
     }
     
-    unsigned source = atoi(argv[2]);
+    unsigned maxCores = atoi(argv[1]);
+    unsigned bucketSize = atoi(argv[2]);
+    unsigned latency = atoi(argv[3]);
+    char* file = argv[4];
+    unsigned source = atoi(argv[5]);
     bool genOutput = false;
-    std::ofstream out(argv[4]);
-    if(argc == 5) {
+    std::ofstream out(argv[7]);
+    if(argc == 8) {
         genOutput = true;
     }
     uint64_t iters = 0;
@@ -39,33 +44,34 @@ int main(int argc, char** argv) {
     uint64_t totalWorkGen = 0;
     uint64_t totalConflicts = 0;
     bool infCores = false;
-    uint64_t maxCores = 128;
     uint64_t maxWork = 0;
     
     Graph* graph = new Graph();
-    //Worklist* worklist = new UnorderedWorklist(0);
+    //Worklist* worklist = new UnorderedWorklist(latency);
     //Worklist* worklist = new LIFO(0);
-    Worklist* worklist = new OrderedWorklist(0, 1);
+    //Worklist* worklist = new OrderedWorklist(latency, bucketSize);
+    Worklist* worklist = new Minnow(maxCores, 1, 64, latency, bucketSize);
     //Worklist* worklist = new LocalOrderedWorklist(maxCores, 64, 10);
     //Worklist* worklist = new OBIM(128, 10, 10000);
     
-    std::cout << "Running BFS on " << argv[1] << " with source vertex " << source << std::endl;
+    std::cout << "Running BFS on " << argv[1] << std::endl;
     time_t t1, t2, t3;
     t1 = time(NULL);
     
-    graph->loadEdgelistFile(argv[1]);
+    graph->loadEdgelistFile(file);
     
     std::cout << "Done loading\n";
-
+    
+    // Initialize worklist
     Work initWork = {source, 0, 0};
     worklist->putWork(initWork, 0);
-    graph->getNode(source)->payload = 0;
+    
     t2 = time(NULL);
 
     Work work;
     std::vector<uint64_t>* workPerIter = new std::vector<uint64_t>();
     std::vector<uint64_t>* conflictsPerIter = new std::vector<uint64_t>();
-
+    
     while(worklist->notEmpty()) {
         workPerCurIter = 0;
         workGenPerCurIter = 0;
@@ -100,15 +106,13 @@ int main(int argc, char** argv) {
                     }
                 }
                 
-                // Someone else is using it, abort and retry later
                 if(abort) {
                     conflictsPerCurIter++;
                     totalConflicts++;
                     worklist->putWork(work, x);
                     continue;
                 }
-                                
-                // If successful, grab locks and continue
+                
                 assert(!abort);
                 for(int i = 0; i < curNode->numEdges; i++) {
                     Edge* edge = graph->getEdge(curNode->edgePtr + i);
@@ -149,12 +153,12 @@ int main(int argc, char** argv) {
     
     if(infCores)
         maxCores = maxWork;
- 
+    
     std::cout << "Iters: " << iters << ", totalWork: " << totalWork << ", max cores active: " << maxWork 
               << ", utilization: " << double(totalWorkIssued)/double(iters*maxCores) 
               << ", executed: " << double(totalWork)/double(iters*maxCores) 
               << ", conflict percent: " << double(totalConflicts)/double(iters*maxCores) << std::endl;
-   
+    
     if(genOutput) {
         for(int i = 0; i < graph->numNodes; i++) {
             out << graph->getNode(i)->id << "," << graph->getNode(i)->payload << "\n";
@@ -165,7 +169,7 @@ int main(int argc, char** argv) {
     std::ofstream out2("./stats.csv");
     out2 << "Iteration, Work Completed\n";
     for(int i = 0; i < workPerIter->size(); i++) {
-        out2 << i << ", " << workPerIter->at(i) << ", " << conflictsPerIter->at(i) << "\n";
+      out2 << i << ", " << workPerIter->at(i) << ", " << conflictsPerIter->at(i) << "\n";
     }
     out2.close();
 }
