@@ -77,11 +77,14 @@ module mkBC_MC_port_adapter  #(BC_MC_Client  bsv_ifc)
 
       // For sub-8-byte writes, replicate the data for proper alignment
       BC_Data x = req.data;
+      BC_MC_REQ_TYPE subcmd = req.cmd_sub;
+      if (subcmd != REQ_ATOM_CAS) begin
       case (req.len)
 	 BC_1B: x = { x[7:0], x[7:0], x[7:0], x[7:0], x[7:0], x[7:0], x[7:0], x[7:0] };
 	 BC_2B: x = { x[15:0], x[15:0], x[15:0], x[15:0] };
 	 BC_4B: x = { x[31:0], x[31:0] };
       endcase
+      end
 
       // req1 is the same as req, except with aligned data
       let req1 = BC_MC_REQ {cmd_sub: req.cmd_sub,
