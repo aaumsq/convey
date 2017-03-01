@@ -20,10 +20,11 @@ USER_VERILOG_DIRS += $(BCLIB)/BClib_verilog
 
 
 # PDK location and revision
-export CNY_PDK = /opt/convey/pdk
-#export CNY_PDK = /opt/convey/pdk_mx
+#export CNY_PDK = /opt/convey/pdk
+export CNY_PDK = /opt/convey/pdk_mx
 #export CNY_PDK_REV = 2015.01.26-3008_mx
-export CNY_PDK_REV = 2015.02.17-3056_mx
+#export CNY_PDK_REV = 2015.02.17-3056_mx
+export CNY_PDK_REV = latest
 
 # Uncomment one of these for your particular Convey platform
 # export CNY_PDK_PLATFORM = hc-1
@@ -47,8 +48,9 @@ export MC_READ_ORDER = 1
 export AE_AE_IF = 0
 
 # The PDK synchronous interface is at 150 MHz
-export CLK_PERS_FREQ = 125
+export CLK_PERS_FREQ = 150
 
+export MC_WR_CMP_IF = 1
 # Uncomment this to build with Convey PDK's memory stats instrumentation
 # export PERFMON = 1
 
