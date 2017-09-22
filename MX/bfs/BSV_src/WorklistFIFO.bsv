@@ -91,7 +91,7 @@ module mkWorklistFIFO(Worklist);
     //endrule
     
     for(Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
-        (* descending_urgency = "processEnq, processFill, engineFull" *)
+        //(* descending_urgency = "processEnq, processFill, engineFull" *)
         rule engineFull(started);
             if(!engineQs[i].notFull) begin
                 if(`DEBUG) $display("WorklistFIFO engineQ[%0d] is full!", i);
@@ -102,19 +102,20 @@ module mkWorklistFIFO(Worklist);
         endrule
         
         rule processFill(started);
-            let pkt <- engine.streamOut[i].get;
             Integer stealIdx = ?;
             if(i == `NUM_ENGINES-1)
                 stealIdx = 0;
             else
                 stealIdx = i + 1;
             if(engineQs[i].notFull) begin
+                let pkt <- engine.streamOut[i].get;
                 engineQs[i].enq(pkt);
-                //$display("WorklistFIFO filling engineQ[%0d][%0d] ", fpgaId, i, fshow(pkt));
+                //$display("%0d: WorklistFIFO filling engineQ[%0d][%0d], nodeID: %0d", cur_cycle, fpgaId, i, tpl_2(pkt));
 	    end
             else if(reqSteals[stealIdx] && stealQs[stealIdx].notFull) begin
+                let pkt <- engine.streamOut[i].get;
                 stealQs[stealIdx].enq(pkt);
-                //$display("WorklistFIFO enqing stealQ[%0d]", stealIdx, fshow(pkt));
+                //$display("%0d: WorklistFIFO enqing stealQ[%0d][%0d], nodeID: %0d", cur_cycle, fpgaId, stealIdx, tpl_2(pkt));
             end
         endrule
 

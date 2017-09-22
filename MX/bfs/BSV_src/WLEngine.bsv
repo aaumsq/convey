@@ -43,6 +43,7 @@ endinterface
 `define WLENGINE_MAX_WRITES 16384
 `define WLENGINE_BACKOFF 128
 `define WRITEFSM_TIMEOUT 2048
+`define WRITEFSM_TIMEOUT0 128
 
 (* synthesize *)
 module mkWLEngine(WLEngine);
@@ -68,6 +69,7 @@ module mkWLEngine(WLEngine);
     
     Reg#(Bool) started <- mkReg(False);
     Reg#(Bool) done <- mkReg(False);
+    Reg#(Bool) writeBufFull <- mkReg(False);
     
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) reqQ <- replicateM(mkFIFOF);
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) respQ <- replicateM(mkFIFOF);
@@ -220,7 +222,7 @@ module mkWLEngine(WLEngine);
                 writeFSM_wlSize <= getWLSize(headPtr_w, tailPtr_w, maxSize);
                 writeFSM_maxSizeMinusOne <= maxSize-1;
             endaction
-            
+
             while(!writeFSM_done) seq
                 action
                     if(`DEBUG) $display("%0d: mkWLEngine WriteFSM checking doubleBufOut[%0d][%0d], writeFSM_done: %0d, notEmpty: %0d", cur_cycle, writeFSM_curIdx, writeFSM_curBufIdx, writeFSM_done, doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].notEmpty);
@@ -238,7 +240,7 @@ module mkWLEngine(WLEngine);
                                 BC_Addr addr = bufferLoc + ((tailPtr_w + extend(pack(offset))) << `LG_WLENTRY_SIZE);
                                 memReqQ[4*i].enq(tagged MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}, data: pack(entry)});
                                 writeFSM_outstandingWrites[i].enq(?);
-                                //$display("mkWLEngine: WriteFSM tailPtr=%0d, offset=%0d, packet: %x", tailPtr_w, offset, entry);
+                                //$display("mkWLEngine: WriteFSM tailPtr=%0d, offset=%0d, packet: %0d", tailPtr_w, offset, tpl_2(entry));
          		        offset = offset + 1;
          		    end
 			end
@@ -268,20 +270,18 @@ module mkWLEngine(WLEngine);
             
             // Write head and tailPtrs
             action
-                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: readFSM writing new head/tail ptrs, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, headPtr_w, tailPtr_w);
+                $display("%0d: mkWLEngine[%0d]: WriteFSM writing new tail ptrs not full, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, headPtr_w, tailPtr_w);
                 GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-                //memReqQ[4].enq(tagged MemWrite64{addr: headPtrLoc, gaddr: gaddr, data: extend(headPtr_w)});
                 memReqQ[5].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr_w)});
             endaction
 
-	    action
-                memReqQ[5].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
-	    endaction
+	    //action
+            //    memReqQ[5].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
+	    //endaction
             
             // When head/tailPtr writes complete, unlock
             action
-                //memRespQ[4].deq();
-                //memReqQ[5].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
+                memReqQ[5].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
                 memRespQ[5].deq();
                 writeFSM_curBufIdx <= writeFSM_curBufIdx + 1;
             endaction
@@ -313,7 +313,7 @@ module mkWLEngine(WLEngine);
             readFSM_outstandingReads[i].deq();
             
             WLEntry entry = unpack(rsp.data);
-            if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM entry priority: %0x, graphId: %0x", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
+            //$display("%0d: mkWLEngine[%0d][%0d]: ReadFSM entry priority: %0d, graphId: %0d", cur_cycle, fpgaId, i, tpl_1(entry), tpl_2(entry));
             doubleBufIn[i][readFSM_buf].enq(entry);
         endrule
     end
@@ -387,13 +387,33 @@ module mkWLEngine(WLEngine);
                     end
                     $display("%0d: mkWLEngine[%0d]: ReadFSM headPtr: %0d, tailPtr: %0d, WL size: %0d, reading %0d entries", cur_cycle, fpgaId, headPtr, tailPtr, size, entries);
                     readFSM_numEntries <= entries;
-         	   for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
-                        readFSM_curEntry[i] <= fromInteger(i);
-         	   end
+         	    for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
+                         readFSM_curEntry[i] <= fromInteger(i);
+         	    end
                 endaction
                 
                 // Read entries and send to buffer
                 if(readFSM_numEntries > 0) seq
+                    // Write head and tailPtrs
+                    action
+                        GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
+			BC_Addr newHeadPtr = headPtr + readFSM_numEntries;
+                        memReqQ[2].enq(tagged MemWrite64{addr: headPtrLoc, gaddr: gaddr, data: extend(newHeadPtr)});
+                        $display("%0d: mkWLEngine[%0d]: ReadFSM writing new head/tail ptrs, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, newHeadPtr, tailPtr);
+                        //memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr)});
+                    endaction
+
+		    //action
+                    //    memReqQ[2].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
+	            //endaction
+                    
+                    // When head/tailPtr writes complete, unlock
+                    action
+                        memReqQ[9].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
+                        memRespQ[2].deq();
+                        //memRespQ[3].deq();
+                    endaction
+
                     while(readFSM_curEntry[`NUM_ENGINES-1] < readFSM_numEntries) seq
                         action
                             //if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d, writing to buf%0d[%0d]...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
@@ -416,7 +436,7 @@ module mkWLEngine(WLEngine);
 
          	    action
          	        UInt#(2) inc = 0;
-         	        for (Integer i = 0; i < `NUM_ENGINES-1; i = i+1) begin
+         	        for (Integer i = 0; i < `NUM_ENGINES; i = i+1) begin
          	            if (readFSM_curEntry[i] < readFSM_numEntries) begin
                                   BC_Addr addr = bufferLoc + ((headPtr+fromInteger(i)) << `LG_WLENTRY_SIZE);
                                   memReqQ[2+i*4].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
@@ -439,31 +459,14 @@ module mkWLEngine(WLEngine);
                             noAction;
                         endaction
                     endseq
-                    
-                    // Write head and tailPtrs
-                    action
-                        $display("%0d: mkWLEngine[%0d]: ReadFSM writing new head/tail ptrs, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, headPtr, tailPtr);
-                        GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-                        memReqQ[2].enq(tagged MemWrite64{addr: headPtrLoc, gaddr: gaddr, data: extend(headPtr)});
-                        //memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr)});
-                    endaction
-
-		    action
-                        memReqQ[2].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
-	            endaction
-                    
-                    // When head/tailPtr writes complete, unlock
-                    action
-                        memRespQ[2].deq();
-                        //memRespQ[3].deq();
-                    endaction
-                    
+		    
                     action
                         if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM done, unlocking!", cur_cycle, fpgaId);
                         if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM read %0d entries for idx %0d[%0d]", cur_cycle, fpgaId, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
-                        memRespQ[2].deq();
+                        memRespQ[9].deq();
                         readFSM_success <= True;
                     endaction
+
                 endseq
                 else seq
                     // No data, unlock and stall avoid needless contention
@@ -541,14 +544,16 @@ module mkWLEngine(WLEngine);
         Vector#(`NUM_ENGINES, Bool) bufOutFulls = genWith(bufOutFullF);
         Vector#(`NUM_ENGINES, Bool) bufOutEmpties = genWith(bufOutEmptyF);
         function Bool isTrueF(Bool x) = x;
-        if(any(isTrueF, bufOutEmpties)) begin
-            //$display("WLEngine triggerWriteFSM EngineQs[%0d] full: %0b", writeFSM_curIdx, bufOutFulls);
+        if(any(isTrueF, bufOutFulls)) begin
+            $display("WLEngine triggerWriteFSM EngineQs[%0d], writeFSMIdx: %0d, full: %0b", fpgaId, writeFSM_curIdx, bufOutFulls);
+	    writeBufFull <= True;
             writeFSM.start();
             triggerWriteFSM_timeout <= 0;
         end
         else begin
             //$display("WLEngine triggerWriteFSM curBuf: %0d full: %b", writeFSM_curBufIdx, bufOutFulls);
-            if(triggerWriteFSM_timeout > `WRITEFSM_TIMEOUT) begin
+	    writeBufFull <= False;
+            if((triggerWriteFSM_timeout > `WRITEFSM_TIMEOUT) || ((triggerWriteFSM_timeout > `WRITEFSM_TIMEOUT0) && any(isTrueF, bufOutEmpties))) begin
                 triggerWriteFSM_timeout <= 0;
                 triggerWriteFSM_lastIdx <= triggerWriteFSM_lastIdx + 1;
                 writeFSM_curBufIdx <= triggerWriteFSM_lastIdx;
@@ -574,13 +579,13 @@ module mkWLEngine(WLEngine);
             
             if((curBufIn[i] == 0) && doubleBufIn[i][0].notEmpty) begin
                 WLEntry pkt = doubleBufIn[i][0].first();
-                if(`DEBUG) $display("%0d: mkWLEngine curBufIn[0] packet %x streaming to WorkListFIFOF", cur_cycle, pkt);
+                //$display("%0d: mkWLEngine curBufIn[0] packet %0d streaming to WorkListFIFOF", cur_cycle, tpl_2(pkt));
                 doubleBufIn[i][0].deq();
                 respQ[i].enq(pkt);
             end
             if((curBufIn[i] == 1) && doubleBufIn[i][1].notEmpty) begin
                 WLEntry pkt = doubleBufIn[i][1].first();
-                if(`DEBUG) $display("%0d: mkWLEngine curBufIn[1] packet %x streaming to WorkListFIFOF", cur_cycle, pkt);
+                //$display("%0d: mkWLEngine curBufIn[1] packet %0d streaming to WorkListFIFOF", cur_cycle, tpl_2(pkt));
                 doubleBufIn[i][1].deq();
                 respQ[i].enq(pkt);
             end
