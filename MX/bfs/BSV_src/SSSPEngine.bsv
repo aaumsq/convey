@@ -157,7 +157,7 @@ module mkSSSPEngine(Engine ifc);
             workInQ.deq();
             WLJob job = tpl_2(pkt);
             
-            if(`DEBUG) $display("%0d: ~~~ SSSPEngine[%0d]: START getSrcNode priority: %0d, nodeID: %0d", cur_cycle, fpgaId, tpl_1(pkt), job);
+            //$display("%0d: ~~~ SSSPEngine[%0d][%0d]: START getSrcNode priority: %0d, nodeID: %0d", cur_cycle, fpgaId, laneId, tpl_1(pkt), job);
             
             graphNodeReqQs[0].enq(GraphNodeReq{id: job});
             numWorkFetched <= numWorkFetched + 1;
@@ -296,8 +296,9 @@ module mkSSSPEngine(Engine ifc);
 	    if (node.numEdges > 0) begin
                 WLEntry newWork = tuple2(0, node.id);
                 workOutQ.enq(newWork);
+		//$display("%0d: mkSSSPEngine[%0d][%0d], enqueue new job, id: %0d", cur_cycle, fpgaId, laneId, node.id);
             end
-            //$display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Num retired: %0d, num discarded: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, fshow(newWork));
+            //$display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Num retired: %0d, num discarded: %0d. work item: %0d", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, node.id);
                 //if(numEdgesDiscarded % 1024 == 0) begin
                     //$display("%0d: SSSPEngine[%0d][%0d]: CAS Success! Edges retired: %0d, edges discarded: %0d, CAS issued: %0d, CAS retried: %0d. Enqueueing new work item: ", cur_cycle, fpgaId, laneId, numEdgesRetired+1, numEdgesDiscarded, numCASIssued, numCASRetried, fshow(newWork));
                 //end

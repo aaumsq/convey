@@ -23,9 +23,13 @@
 #include <assert.h>
 
 //#include "BC_linkage.h"
-#include "../../BClib_src/BC_linkage.h"
+#include "BC_linkage.h"
 #include "timing.h"
 #include "instrumentation.h"
+
+#ifdef FOR_HW
+#include <convey/usr/cny_comp.h>
+#endif
 
 #define max(a,b) (((a) > (b)) ? (a) : (b))
 #define min(a,b) (((a) < (b)) ? (a) : (b))
@@ -54,7 +58,10 @@ typedef enum {
     HEADPTR,
     TAILPTR,
     WLSIZE,
-    NUMFPGA
+    NUMFPGA,
+    TAILPTR_W,
+    COMMITHEAD,
+    COMMITTAIL
 } JobMetaIndexes;
 
 static  uint64_t *param_block, *cp_param_block;
@@ -193,7 +200,7 @@ int App_SW (const char *file)
     
     Job *jobs, *cp_jobs;
     uint32_t numJobs = 1;
-    uint64_t maxJobs = (uint64_t)2*1024*1024; // 2 Giga-entries
+    uint64_t maxJobs = (uint64_t)2*1024*1024*1024; // 2 Giga-entries, must be order of 2
     posix_memalign((void**)&jobs, 512, numJobs*sizeof(Job));
     
     #define INIT_IDX 0
@@ -203,7 +210,7 @@ int App_SW (const char *file)
     nodes[INIT_IDX].payload = 0;
     
     uint64_t *meta, *cp_meta;
-    uint32_t numMeta = 6;
+    uint32_t numMeta = 16;
     posix_memalign((void**)&meta, 512, numMeta*sizeof(uint64_t));
     
     meta[LOCK_W] = 0;
@@ -212,6 +219,9 @@ int App_SW (const char *file)
     meta[TAILPTR] = numJobs;
     meta[WLSIZE] = maxJobs;
     meta[NUMFPGA] = 3;
+    meta[TAILPTR_W] = numJobs;
+    meta[COMMITHEAD] = 1;
+    meta[COMMITTAIL] = 0;
     
     // Generate and create output
     //Output *output, *cp_output;

@@ -33,7 +33,7 @@ interface Worklist;
     interface Vector#(16, Get#(MemReq)) memReq;
     interface Vector#(16, Put#(MemResp)) memResp;
     
-    method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
+    method Action init(BC_AEId fpgaId, BC_Addr lockLoc, BC_Addr headPtrLoc, BC_Addr tailPtrLoc, BC_Addr tailPtrLoc_w, BC_Addr comitHeadPtrLoc, BC_Addr commitTailPtrLoc, BC_Addr maxSize, BC_Addr bufferLoc);
     method Action stop();
     method Bool isDone();
 endinterface
@@ -139,7 +139,7 @@ module mkWorklistFIFO(Worklist);
             //end
             //else begin
                 engine.streamIn[i].put(pkt);
-                if (`DEBUG) $display("%0d: WorklistFIFO spill to streamIn[%0d]", cur_cycle, i, fshow(pkt));
+                //$display("%0d: WorklistFIFO spill to streamIn[%0d]", cur_cycle, i, fshow(pkt));
             //end
         endrule
         
@@ -171,9 +171,9 @@ module mkWorklistFIFO(Worklist);
         //endrule
     end
     
-    method Action init(BC_AEId fpgaid, BC_Addr lockloc, BC_Addr headptrloc, BC_Addr tailptrloc, BC_Addr maxsize, BC_Addr bufferloc);
+    method Action init(BC_AEId fpgaid, BC_Addr lockloc, BC_Addr headptrloc, BC_Addr tailptrloc, BC_Addr tailptrloc_w, BC_Addr commitheadptrloc, BC_Addr committailptrloc, BC_Addr maxsize, BC_Addr bufferloc);
         $display("%0d: mkWorklistFIFO[%0d]: INIT", cur_cycle, fpgaid);
-        engine.init(fpgaid, lockloc, headptrloc, tailptrloc, maxsize, bufferloc);
+        engine.init(fpgaid, lockloc, headptrloc, tailptrloc, tailptrloc_w, commitheadptrloc, committailptrloc, maxsize, bufferloc);
         done <= False;
         started <= True;
         fpgaId <= fpgaid;

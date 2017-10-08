@@ -26,7 +26,7 @@ import GraphEngine::*;
 import GaloisTypes::*;
 `include "GaloisDefs.bsv"
 
-`define WATCHDOG_TIMEOUT 5000000000
+`define WATCHDOG_TIMEOUT 1000000000
 //`define WATCHDOG_TIMEOUT 50000000
 //`define WATCHDOG_TIMEOUT 100000
 
@@ -51,6 +51,9 @@ Integer param_headPtr = 2;
 Integer param_tailPtr = 3;
 Integer param_wlSize = 4;
 Integer param_numFPGA = 5;
+Integer param_tailPtr_w = 6;
+Integer param_commitHead = 7;
+Integer param_commitTail = 8;
 
 (* synthesize *)
 module mkSSSP(BC_HW2_IFC);
@@ -107,6 +110,7 @@ module mkSSSP(BC_HW2_IFC);
     Reg#(Bit#(64)) edgePipeStall <- mkRegU;
     Reg#(Bit#(64)) worklistStall <- mkRegU;
     Reg#(UInt#(5)) rg_i <- mkRegU;
+    Reg#(Bool) set_done <- mkReg(False);
     
     Worklist worklist <- mkWorklistFIFO(reset_by worklistRst.new_rst);
     Vector#(16, FIFOF#(MemReq)) worklistOutQs <- replicateM(mkFIFOF);
@@ -364,8 +368,11 @@ module mkSSSP(BC_HW2_IFC);
                BC_Addr lockLoc = paramMetaPtr + fromInteger(param_lock) * 8;
                BC_Addr headPtrLoc = paramMetaPtr + fromInteger(param_headPtr) * 8;
                BC_Addr tailPtrLoc = paramMetaPtr + fromInteger(param_tailPtr) * 8;
+               BC_Addr tailPtrLoc_w = paramMetaPtr + fromInteger(param_tailPtr_w) * 8;
+               BC_Addr commitHeadPtrLoc = paramMetaPtr + fromInteger(param_commitHead) * 8;
+               BC_Addr commitTailPtrLoc = paramMetaPtr + fromInteger(param_commitTail) * 8;
                
-               worklist.init(fpgaId, lockLoc, headPtrLoc, tailPtrLoc, truncate(wlSize), paramJobsPtr);
+               worklist.init(fpgaId, lockLoc, headPtrLoc, tailPtrLoc, tailPtrLoc_w, commitHeadPtrLoc, commitTailPtrLoc, truncate(wlSize), paramJobsPtr);
            endaction
            
            action
@@ -395,8 +402,9 @@ module mkSSSP(BC_HW2_IFC);
 	       rg_numFPGA <= truncate(unpack(numFPGA));
            endaction
            
-           while(numAllDones < 7 && watchdog < `WATCHDOG_TIMEOUT) seq
+           while(numAllDones < 15 && watchdog < `WATCHDOG_TIMEOUT) seq
                numDones <= 0;
+               set_done <= False;
                //$display("mkSSSP[%0d]: Checking local dones..., numAllDones = %d", fpgaId, numAllDones);
                while(numDones < 31 && watchdog < `WATCHDOG_TIMEOUT) seq
                    //$display("%0d: SSSP[%0d]: Checking allDones %0d...", cur_cycle, fpgaId, numAllDones);
@@ -414,14 +422,29 @@ module mkSSSP(BC_HW2_IFC);
                      end
 	           endaction
                    action
-                     if(done)
-                         numDones <= numDones + 1;
-                     else begin
-                         numDones <= 0;
-                         numAllDones <= 1;
-                         //if (`DEBUG) $display("mkSSSP[%0d]: RESETTING ALL DONE", fpgaId);
-                     end
+                       if(done) begin
+                           numDones <= numDones + 1;
+		           set_done <= False;
+	               end
+                       else begin
+                           numDones <= 0;
+                           numAllDones <= 1;
+		           set_done <= True;
+                           //if (`DEBUG) $display("mkSSSP[%0d]: RESETTING ALL DONE", fpgaId);
+                       end
                    endaction
+
+                   if (set_done) seq
+                       action
+                           BC_Addr addr = paramDonePtr + (extend(fpgaId) << 3);
+                           ssspOutQs[0].enq(MemWrite64{addr: addr, gaddr: GaloisAddress{mod: MK_SSSP, addr: 0}, data: 1});
+                       endaction
+		   
+		       action
+		           ssspInQs[0].deq();
+		       endaction
+		   endseq
+
                endseq
             
                // Set Done
@@ -622,6 +645,7 @@ module mkSSSP(BC_HW2_IFC);
         watchdog <= 0;
         cycle_counter <= 0; 
 	memCounter <= 0;
+	set_done <= False;
 	rg_numFPGA <= 3;
         for (Integer i = 0; i < 16; i = i + 1) begin
             memCounterGraph[i] <= 0;
