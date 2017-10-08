@@ -210,7 +210,7 @@ module mkWLEngine(WLEngine);
 		turn <= True;
             endaction
 
-            // Get updated head and tail pointers
+            // Get updated head, tail pointers and the tail pointer of the commitQueue
             action
                 //$display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
                 GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
@@ -219,17 +219,20 @@ module mkWLEngine(WLEngine);
                 memReqQ[5].enq(tagged MemRead64{addr: tailPtrLoc_w, gaddr: gaddr});
 	        curBufOut <= writeFSM_curBufIdx + 1;
 		Bit#(16) numEntries = 0;
+		//Calculate the size of the space to be allocate by adding up the length of the buffers
 		for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
 		    numEntries = numEntries + bufOutLen[i][writeFSM_curBufIdx];
 		    //$display("%0d: mkWLEngine[%0d]: bufOutLen[%0d][%0d]: %0d", cur_cycle, fpgaId, i, writeFSM_curBufIdx, bufOutLen[i][writeFSM_curBufIdx]);
 		end
 		writeFSM_numEntries <= numEntries;
+		//Clear the buffer length
 		for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
 		    bufOutLen[i][writeFSM_curBufIdx] <= 0;
 		end
 		turn <= False;
             endaction
             
+	    //Enqueue the commitQueue
             action
 	        MemResp commitTailRsp = memRespQ[3].first();
                 MemResp headRsp = memRespQ[4].first();
@@ -245,28 +248,18 @@ module mkWLEngine(WLEngine);
 
 	    action
                 GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-	        //if (fullWrite) begin
-	            //BC_Addr newTailPtr = tailPtr_w + ((`NUM_ENGINES * `WLENGINE_BUFOUT_SIZE) << `LG_WLENTRY_SIZE);
-	            BC_Addr newTailPtr = tailPtr_w + extend(writeFSM_numEntries);
-                    memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc_w, gaddr: gaddr, data: extend(newTailPtr)});
-                    //$display("%0d: mkWLEngine[%0d]: WriteFSM writing new tail ptrs, headPtr=%0d, tailPtr=%0d, numEntries=%0d", cur_cycle, fpgaId, headPtr_w, newTailPtr, writeFSM_numEntries);
-	        //end
+	        BC_Addr newTailPtr = tailPtr_w + extend(writeFSM_numEntries);
+                memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc_w, gaddr: gaddr, data: extend(newTailPtr)});
 	        memReqQ[4].enq(tagged MemWrite64{addr: commitTailPtrLoc, gaddr: gaddr, data: extend(rg_commitTail)});
 	    endaction
 
+            //Release the lock
 	    action
-	        //if (fullWrite) begin
 		//$display("%0d: mkWLEngine[%0d]: unlock write worklist", cur_cycle, fpgaId);
-	            memRespQ[3].deq();
-                    memReqQ[5].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
-		//end
+	        memRespQ[3].deq();
+                memReqQ[5].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
 	        memRespQ[4].deq();
 	    endaction
-
-            //action
-            //    writeFSM_wlSize <= getWLSize(headPtr_w, tailPtr_w, maxSize);
-            //    writeFSM_maxSizeMinusOne <= maxSize-1;
-            //endaction
 
             while(!writeFSM_done) seq
                 action
@@ -274,7 +267,6 @@ module mkWLEngine(WLEngine);
                     if(writeFSM_totalWrites > `WLENGINE_MAX_WRITES) begin
                         writeFSM_done <= True;
                     end
-                    //else if(doubleBufOut[writeFSM_curIdx][writeFSM_curBufIdx].notEmpty) begin
          	    else begin
          	        UInt#(3) offset = 0;
          	        for (Integer i = 0; i < `NUM_ENGINES; i = i+1) begin
@@ -308,93 +300,47 @@ module mkWLEngine(WLEngine);
                 endaction
             endseq
             
-	    //if (!fullWrite) seq
-            //    // Write head and tailPtrs
-            //    action
-            //        $display("%0d: mkWLEngine[%0d]: WriteFSM writing new tail ptrs not full, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, headPtr_w, tailPtr_w);
-            //        GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-	    //        memReqQ[3].enq(tagged MemRead64{addr: commitHeadPtrLoc, gaddr: gaddr});
-            //        memReqQ[5].enq(tagged MemWrite64{addr: tailPtrLoc_w, gaddr: gaddr, data: extend(tailPtr_w)});
-            //    endaction
+	    action
+                GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
+	        memReqQ[3].enq(tagged MemRead64{addr: commitHeadPtrLoc, gaddr: gaddr});
+	    endaction
 
-            //    // When head/tailPtr writes complete, unlock
-            //    action
-	    //        MemResp commitHeadRsp = memRespQ[3].first();
-	    //        memRespQ[3].deq();
-            //        memRespQ[5].deq();
-            //        memReqQ[5].enq(tagged MemWrite32{addr: lockLoc, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
-            //        writeFSM_curBufIdx <= writeFSM_curBufIdx + 1;
-	    //        rg_commitHead <= truncate(commitHeadRsp.data);
-            //    endaction
+	    action
+	        MemResp commitHeadRsp = memRespQ[3].first();
+	        memRespQ[3].deq();
+	        rg_commitHead <= truncate(commitHeadRsp.data);
+	    endaction
 
-	    //    while (rg_commitHead != rg_commitTail) seq
-	    //        action
-            //            GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-	    //            memReqQ[3].enq(tagged MemRead64{addr: commitHeadPtrLoc, gaddr: gaddr});
-	    //        endaction
-
-	    //        action
-	    //            MemResp commitHeadRsp = memRespQ[3].first();
-	    //    	memRespQ[3].deq();
-	    //    	rg_commitHead <= truncate(commitHeadRsp.data);
-	    //        endaction
-	    //    endseq
-
-            //    action
-            //        GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-            //        $display("%0d: mkWLEngine[%0d]: WriteFSM wrote %0d entries", cur_cycle, fpgaId, writeFSM_totalWrites);
-	    //        memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr_w)});
-	    //        memReqQ[4].enq(tagged MemWrite64{addr: commitHeadPtrLoc, gaddr: gaddr, data: extend(rg_commitHead+1)});
-            //        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: WriteFSM done, unlocking!", cur_cycle, fpgaId);
-            //    endaction
-
-	    //    action
-	    //        memRespQ[3].deq();
-	    //        memRespQ[4].deq();
-            //        memRespQ[5].deq();
-	    //    endaction
-	    //endseq
-	    //else seq
+            //Check whether it's on top of the commitQueue
+	    while (rg_commitHead != rg_commitTail) seq
+	        //$display("%0d: mkWLEngine[%0d]: commit waiting, commitHead: %0d, tail: %0d", cur_cycle, fpgaId, rg_commitHead, rg_commitTail);
 	        action
                     GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-		    memReqQ[3].enq(tagged MemRead64{addr: commitHeadPtrLoc, gaddr: gaddr});
-		endaction
-
-		action
-		    MemResp commitHeadRsp = memRespQ[3].first();
-		    memRespQ[3].deq();
-		    rg_commitHead <= truncate(commitHeadRsp.data);
-		endaction
-
-		while (rg_commitHead != rg_commitTail) seq
-		    //$display("%0d: mkWLEngine[%0d]: commit waiting, commitHead: %0d, tail: %0d", cur_cycle, fpgaId, rg_commitHead, rg_commitTail);
-		    action
-                        GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-		        memReqQ[3].enq(tagged MemRead64{addr: commitHeadPtrLoc, gaddr: gaddr});
-	            endaction
-
-		    action
-		        MemResp commitHeadRsp = memRespQ[3].first();
-			memRespQ[3].deq();
-			rg_commitHead <= truncate(commitHeadRsp.data);
-		    endaction
-		endseq
-
-                action
-                    GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-                    //if(writeFSM_totalWrites > 0) 
-                        //$display("%0d: mkWLEngine[%0d]: WriteFSM wrote %0d entries", cur_cycle, fpgaId, writeFSM_totalWrites);
-		    memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr_w)});
-		    memReqQ[4].enq(tagged MemWrite64{addr: commitHeadPtrLoc, gaddr: gaddr, data: extend(rg_commitHead+1)});
-                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: WriteFSM done, unlocking!", cur_cycle, fpgaId);
-                endaction
+	            memReqQ[3].enq(tagged MemRead64{addr: commitHeadPtrLoc, gaddr: gaddr});
+	        endaction
 
 	        action
-		    memRespQ[3].deq();
-		    memRespQ[4].deq();
-		    memRespQ[5].deq();
-		endaction
-            //endseq
+	            MemResp commitHeadRsp = memRespQ[3].first();
+	    	memRespQ[3].deq();
+	    	rg_commitHead <= truncate(commitHeadRsp.data);
+	        endaction
+	    endseq
+
+            //Dequeue it from the commitQueue and commit the real tail pointer
+            action
+                GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
+                //if(writeFSM_totalWrites > 0) 
+                    //$display("%0d: mkWLEngine[%0d]: WriteFSM wrote %0d entries", cur_cycle, fpgaId, writeFSM_totalWrites);
+	        memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr_w)});
+	        memReqQ[4].enq(tagged MemWrite64{addr: commitHeadPtrLoc, gaddr: gaddr, data: extend(rg_commitHead+1)});
+                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: WriteFSM done, unlocking!", cur_cycle, fpgaId);
+            endaction
+
+	    action
+	        memRespQ[3].deq();
+	        memRespQ[4].deq();
+	        memRespQ[5].deq();
+	    endaction
         endseq
        );
     
@@ -423,183 +369,147 @@ module mkWLEngine(WLEngine);
 
     let readFSM <- mkFSM(
         seq
-            //action
-            //    //$display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
-            //    GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-            //    memReqQ[10].enq(tagged MemRead64{addr: headPtrLoc, gaddr: gaddr});
-            //    memReqQ[14].enq(tagged MemRead64{addr: tailPtrLoc, gaddr: gaddr});
-            //endaction
-            //
-            //action
-            //    MemResp headRsp = memRespQ[10].first();
-            //    MemResp tailRsp = memRespQ[14].first();
-            //    memRespQ[10].deq();
-            //    memRespQ[14].deq();
-            //    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: headPtr: %0x, tailPtr: %0x", cur_cycle, fpgaId, headRsp.data, tailRsp.data);
-            //    headPtr_r <= truncate(pack(headRsp.data));
-            //    tailPtr_r <= truncate(pack(tailRsp.data));
-            //endaction
+            action
+                readFSM_success <= False;
+                lockFSM.start();
+                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d idx %0d...", cur_cycle, fpgaId, readFSM_buf, readFSM_bufIdx);
+            endaction
+            
+            action
+                lockFSM.waitTillDone();
+            endaction
 
-            //if (headPtr_r != tailPtr_r) seq
-                action
-                    readFSM_success <= False;
-                    lockFSM.start();
-                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: Starting readFSM, filling buf %0d idx %0d...", cur_cycle, fpgaId, readFSM_buf, readFSM_bufIdx);
-                endaction
+            // Get updated head and tail pointers
+            action
+                //$display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
+                GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
+                memReqQ[10].enq(tagged MemRead64{addr: headPtrLoc, gaddr: gaddr});
+                memReqQ[14].enq(tagged MemRead64{addr: tailPtrLoc, gaddr: gaddr});
+            endaction
+            
+            action
+                MemResp headRsp = memRespQ[10].first();
+                MemResp tailRsp = memRespQ[14].first();
+                memRespQ[10].deq();
+                memRespQ[14].deq();
+                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: headPtr: %0x, tailPtr: %0x", cur_cycle, fpgaId, headRsp.data, tailRsp.data);
+                headPtr <= truncate(pack(headRsp.data));
+                tailPtr <= truncate(pack(tailRsp.data));
+            endaction
+
+            action
+                // Get number of entries in FIFO
+                BC_Addr size = 0;
+                if(headPtr < tailPtr) begin
+                    size = tailPtr - headPtr;
+                end
+                else if(headPtr > tailPtr) begin
+                    size = (maxSize - tailPtr) + headPtr;
+                end
                 
+                // Determine number of entries to read
+                BC_Addr entries = ?;
+                if(size > (`NUM_ENGINES*`WLENGINE_BUFIN_SIZE)) begin
+                    entries = (`NUM_ENGINES*`WLENGINE_BUFIN_SIZE);
+                end
+                else begin
+                    entries = size;
+                end
+                //$display("%0d: mkWLEngine[%0d]: ReadFSM headPtr: %0d, tailPtr: %0d, WL size: %0d, reading %0d entries", cur_cycle, fpgaId, headPtr, tailPtr, size, entries);
+                readFSM_numEntries <= entries;
+                for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
+                     readFSM_curEntry[i] <= fromInteger(i);
+                end
+            endaction
+            
+            // Read entries and send to buffer
+            if(readFSM_numEntries > 0) seq
+                // Write head and tailPtrs
                 action
-                    lockFSM.waitTillDone();
-                endaction
-
-                // Get updated head and tail pointers
-                action
-                    //$display("%0d: mkWLEngine[%0d]: getting updated head/tail ptrs", cur_cycle, fpgaId);
                     GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-                    memReqQ[10].enq(tagged MemRead64{addr: headPtrLoc, gaddr: gaddr});
-                    memReqQ[14].enq(tagged MemRead64{addr: tailPtrLoc, gaddr: gaddr});
+	    	BC_Addr newHeadPtr = headPtr + readFSM_numEntries;
+                    memReqQ[2].enq(tagged MemWrite64{addr: headPtrLoc, gaddr: gaddr, data: extend(newHeadPtr)});
+                    //$display("%0d: mkWLEngine[%0d]: ReadFSM writing new head/tail ptrs, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, newHeadPtr, tailPtr);
+                    //memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr)});
                 endaction
-                
+
+                // When head/tailPtr writes complete, unlock
                 action
-                    MemResp headRsp = memRespQ[10].first();
-                    MemResp tailRsp = memRespQ[14].first();
-                    memRespQ[10].deq();
-                    memRespQ[14].deq();
-                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: headPtr: %0x, tailPtr: %0x", cur_cycle, fpgaId, headRsp.data, tailRsp.data);
-                    headPtr <= truncate(pack(headRsp.data));
-                    tailPtr <= truncate(pack(tailRsp.data));
+                    memRespQ[2].deq();
+                    memReqQ[9].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
+                    //memRespQ[3].deq();
                 endaction
 
-        
-                action
-                    // Get number of entries in FIFO
-                    BC_Addr size = 0;
-                    if(headPtr < tailPtr) begin
-                        size = tailPtr - headPtr;
-                    end
-                    else if(headPtr > tailPtr) begin
-                        size = (maxSize - tailPtr) + headPtr;
-                    end
-                    
-                    // Determine number of entries to read
-                    BC_Addr entries = ?;
-                    if(size > (`NUM_ENGINES*`WLENGINE_BUFIN_SIZE)) begin
-                        entries = (`NUM_ENGINES*`WLENGINE_BUFIN_SIZE);
-                    end
-                    else begin
-                        entries = size;
-                    end
-                    //$display("%0d: mkWLEngine[%0d]: ReadFSM headPtr: %0d, tailPtr: %0d, WL size: %0d, reading %0d entries", cur_cycle, fpgaId, headPtr, tailPtr, size, entries);
-                    readFSM_numEntries <= entries;
-         	    for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
-                         readFSM_curEntry[i] <= fromInteger(i);
-         	    end
-                endaction
-                
-                // Read entries and send to buffer
-                if(readFSM_numEntries > 0) seq
-                    // Write head and tailPtrs
+                while(readFSM_curEntry[`NUM_ENGINES-1] < readFSM_numEntries) seq
                     action
-                        GaloisAddress gaddr = GaloisAddress{mod: MK_WORKLIST, addr: ?};
-			BC_Addr newHeadPtr = headPtr + readFSM_numEntries;
-                        memReqQ[2].enq(tagged MemWrite64{addr: headPtrLoc, gaddr: gaddr, data: extend(newHeadPtr)});
-                        //$display("%0d: mkWLEngine[%0d]: ReadFSM writing new head/tail ptrs, headPtr=%0d, tailPtr=%0d", cur_cycle, fpgaId, newHeadPtr, tailPtr);
-                        //memReqQ[3].enq(tagged MemWrite64{addr: tailPtrLoc, gaddr: gaddr, data: extend(tailPtr)});
-                    endaction
-
-		    //action
-                    //    memReqQ[2].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
-	            //endaction
-                    
-                    // When head/tailPtr writes complete, unlock
-                    action
-                        memRespQ[2].deq();
-                        memReqQ[9].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
-                        //memRespQ[3].deq();
-                    endaction
-
-                    while(readFSM_curEntry[`NUM_ENGINES-1] < readFSM_numEntries) seq
-                        action
-                            //if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d, writing to buf%0d[%0d]...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
-         		    for (Integer i = 0; i < `NUM_ENGINES; i = i+1) begin
-                                BC_Addr addr = bufferLoc + ((headPtr+fromInteger(i)) << `LG_WLENTRY_SIZE);
-                                memReqQ[2+i*4].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
-				//$display("%0d: mkWLEngine[%0d][%0d]: readFSM read headPtr: %0d", cur_cycle, fpgaId, i, headPtr + fromInteger(i));
-                                readFSM_outstandingReads[i].enq(?);
-                                
-                                readFSM_curEntry[i] <= readFSM_curEntry[i] + `NUM_ENGINES;
-         		    end
+                        //if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM Reading entry %0d of %0d, writing to buf%0d[%0d]...", cur_cycle, fpgaId, readFSM_curEntry, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
+            	    for (Integer i = 0; i < `NUM_ENGINES; i = i+1) begin
+                            BC_Addr addr = bufferLoc + ((headPtr+fromInteger(i)) << `LG_WLENTRY_SIZE);
+                            memReqQ[2+i*4].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
+	    		//$display("%0d: mkWLEngine[%0d][%0d]: readFSM read headPtr: %0d", cur_cycle, fpgaId, i, headPtr + fromInteger(i));
+                            readFSM_outstandingReads[i].enq(?);
                             
-                            headPtr <= (headPtr + `NUM_ENGINES) & maxSize_mask;
-                        endaction
-                    endseq
-
-         	    action
-         	        UInt#(2) inc = 0;
-         	        for (Integer i = 0; i < `NUM_ENGINES; i = i+1) begin
-         	            if (readFSM_curEntry[i] < readFSM_numEntries) begin
-                                BC_Addr addr = bufferLoc + ((headPtr+fromInteger(i)) << `LG_WLENTRY_SIZE);
-                                memReqQ[2+i*4].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
-				//$display("%0d: mkWLEngine[%0d][%0d]: readFSM read headPtr: %0d", cur_cycle, fpgaId, i, headPtr + fromInteger(i));
-                                readFSM_outstandingReads[i].enq(?);
-         	         	inc = inc + 1;
-         	            end 
-         	        end
-         	        BC_Addr newHeadPtr = headPtr + extend(pack(inc));
-         	        headPtr <= newHeadPtr & maxSize_mask;
-         	    endaction
-                    
-                    while(readFSM_outstandingReads[0].notEmpty || readFSM_outstandingReads[1].notEmpty || readFSM_outstandingReads[2].notEmpty || readFSM_outstandingReads[3].notEmpty) seq
-                        action
-                            //$display("%0d: ReadFSM: waiting for %0d reads to complete", cur_cycle, readFSM_numReads.getVal());
-                            noAction;
-                        endaction
-                    endseq
-		    
-                    action
-                        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM done, unlocking!", cur_cycle, fpgaId);
-                        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM read %0d entries for idx %0d[%0d]", cur_cycle, fpgaId, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
-                        memRespQ[9].deq();
-                        //readFSM_success <= True;
+                            readFSM_curEntry[i] <= readFSM_curEntry[i] + `NUM_ENGINES;
+            	    end
+                        
+                        headPtr <= (headPtr + `NUM_ENGINES) & maxSize_mask;
                     endaction
-
                 endseq
-                else seq
-                    // No data, unlock and stall avoid needless contention
+
+                action
+                    UInt#(2) inc = 0;
+                    for (Integer i = 0; i < `NUM_ENGINES; i = i+1) begin
+                        if (readFSM_curEntry[i] < readFSM_numEntries) begin
+                            BC_Addr addr = bufferLoc + ((headPtr+fromInteger(i)) << `LG_WLENTRY_SIZE);
+                            memReqQ[2+i*4].enq(tagged MemRead64{addr: addr, gaddr: GaloisAddress{mod: MK_WORKLIST, addr: ?}});
+	    		//$display("%0d: mkWLEngine[%0d][%0d]: readFSM read headPtr: %0d", cur_cycle, fpgaId, i, headPtr + fromInteger(i));
+                            readFSM_outstandingReads[i].enq(?);
+                     	inc = inc + 1;
+                        end 
+                    end
+                    BC_Addr newHeadPtr = headPtr + extend(pack(inc));
+                    headPtr <= newHeadPtr & maxSize_mask;
+                endaction
+                
+                while(readFSM_outstandingReads[0].notEmpty || readFSM_outstandingReads[1].notEmpty || readFSM_outstandingReads[2].notEmpty || readFSM_outstandingReads[3].notEmpty) seq
                     action
-                        memReqQ[2].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
-                        if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM done, unlocking!", cur_cycle, fpgaId);
-                    endaction
-                    
-                    action
-                        memRespQ[2].deq();
-                    endaction
-                    
-                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM nothing to read, stalling for %0d cycles", cur_cycle, fpgaId, `WLENGINE_BACKOFF);
-                    readFSM_backOff <= 0;
-                    while(readFSM_backOff < `WLENGINE_BACKOFF) seq
-                        action
-                            readFSM_backOff <= readFSM_backOff + 1;
-                        endaction
-                    endseq
-                    
-                    action
+                        //$display("%0d: ReadFSM: waiting for %0d reads to complete", cur_cycle, readFSM_numReads.getVal());
                         noAction;
                     endaction
-
                 endseq
-            //endseq
-            //else seq
-            //    action
-            //        readFSM_backOff <= 0;
-            //        if (`DEBUG) $display("%0d: mkWLEngine[%d]: readFSM nothing to read", cur_cycle, fpgaId);
-            //    endaction
+	        
+                action
+                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM done, unlocking!", cur_cycle, fpgaId);
+                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM read %0d entries for idx %0d[%0d]", cur_cycle, fpgaId, readFSM_numEntries, readFSM_bufIdx, readFSM_buf);
+                    memRespQ[9].deq();
+                    //readFSM_success <= True;
+                endaction
 
-            //    while (readFSM_backOff < `WLENGINE_BACKOFF) seq
-            //        action 
-            //            readFSM_backOff <= readFSM_backOff + 1;
-            //        endaction
-            //    endseq
-            //endseq
+            endseq
+            else seq
+                // No data, unlock and stall avoid needless contention
+                action
+                    memReqQ[2].enq(tagged MemWrite32{addr: lockLoc_r, gaddr: GaloisAddress{mod:MK_WORKLIST, addr: ?}, data: 0});
+                    if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM done, unlocking!", cur_cycle, fpgaId);
+                endaction
+                
+                action
+                    memRespQ[2].deq();
+                endaction
+                
+                if(`DEBUG) $display("%0d: mkWLEngine[%0d]: ReadFSM nothing to read, stalling for %0d cycles", cur_cycle, fpgaId, `WLENGINE_BACKOFF);
+                readFSM_backOff <= 0;
+                while(readFSM_backOff < `WLENGINE_BACKOFF) seq
+                    action
+                        readFSM_backOff <= readFSM_backOff + 1;
+                    endaction
+                endseq
+                
+                action
+                    noAction;
+                endaction
+
+            endseq
         endseq
     );
     
