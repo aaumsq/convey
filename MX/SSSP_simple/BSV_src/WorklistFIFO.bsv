@@ -59,6 +59,7 @@ module mkWorklistFIFO(Worklist);
     Vector#(`NUM_ENGINES, Reg#(Bool)) upgrade <- replicateM(mkReg(False));
     
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) engineQs <- replicateM(mkSizedBufBRAMFIFOF(`WORKLIST_FIFO_SIZE));
+    //backupQ has priority 1 lower than the current priority
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) backupQs <- replicateM(mkSizedBufBRAMFIFOF(512));
     
     //Reg#(Vector#(`NUM_ENGINES, Bool)) noEnqs <- mkRegU;
@@ -82,7 +83,7 @@ module mkWorklistFIFO(Worklist);
 	function Bool isFalse(Bool x) = !x;
 
 	Vector#(`NUM_ENGINES, Bool) allMove = genWith(isMove);
-	//if (cycle % 1024 == 0) $display("%d: Priorities are %d %d %d %d", cur_cycle, priorities[0], priorities[1], priorities[2], priorities[3]);
+	//if (cycle % 1024 == 0) $display("%d: Priorities are %d %d %d %d %d %d %d %d", cur_cycle, priorities[0], priorities[1], priorities[2], priorities[3], priorities[4], priorities[5], priorities[6], priorities[7]);
 	if (all(isTrue, allMove)) engine.cur_pri_ifc <= True;
 	else if (all(isFalse, allMove)) engine.cur_pri_ifc <= False;
     endrule
@@ -145,6 +146,7 @@ module mkWorklistFIFO(Worklist);
         rule processFill(started);
 	    //fillBuf[i].deq();
 	    //UInt#(3) pri = truncate(unpack(tpl_1(pkt)));
+	    //Fill from stealQ
             if(stealQs[i].notEmpty && engineQs[i].notFull) begin
                 let pkt = stealQs[i].first();
                 UInt#(3) pri = truncate(unpack(tpl_1(pkt)));
@@ -152,12 +154,15 @@ module mkWorklistFIFO(Worklist);
                 //$display("Deq from stealQ[%0d]", i);
                 engineQs[i].enq(pkt);
 	        if (stealPri[i] <= priorities[i]) begin
+		    //Set the Current priority if the priority from stealQ is higher
+		    //Reset the counter
 		    priorities[i] <= stealPri[i];
 		    counter[i] <= 0;
 		end
 		else if (counter[i] < `COUNTER_MAX) counter[i] <= counter[i] + 1;
             end
 	    else if (engine.streamOut[i].notEmpty && engineQs[i].notFull) begin
+	        //There is something in the globalQ
                 WLEntry pkt = engine.streamOut[i].first();
 	        //let pkt <- engine.streamOut[i].get();
 	        UInt#(3) pri;
@@ -165,10 +170,12 @@ module mkWorklistFIFO(Worklist);
 	        if (pri <= priorities[i]) counter[i] <= 0;
 	        else if (counter[i] < `COUNTER_MAX) counter[i] <= counter[i] + 1;
 	        if (pri <= backupPri[i] || (!backupQs[i].notEmpty)) begin
+		    //If the workitem from globalQ has higher priority than backupQ, dequeue from globalQ
 	            engine.streamOut[i].deq();
                     engineQs[i].enq(pkt);
-	            //if ((pri < priorities[i]) || (!engineQs[i].notEmpty)) begin
 		    if ((counter[i] == `COUNTER_MAX) || (pri < priorities[i])) begin
+		        //If it has been a long time since the last item of the current priority,
+			//or the workitem from globalQ has higher priority, set the current priority and dump the globalQ
 	                priorities[i] <= pri;
 			turn[i] <= True;
 		    end
@@ -179,6 +186,7 @@ module mkWorklistFIFO(Worklist);
 	            //end
 	        end
 		else if (backupQs[i].notEmpty) begin
+		    //The backupQ has higher priority
 		    WLEntry pkt2 = backupQs[i].first();
 		    backupQs[i].deq();
 		    engineQs[i].enq(pkt2);
@@ -190,6 +198,7 @@ module mkWorklistFIFO(Worklist);
 		end
 	    end
 	    else if (backupQs[i].notEmpty && ((!engineQs[i].notEmpty) || turn[i]) && engineQs[i].notFull) begin
+	        //The globalQ is empty, and the engineQ is empty (or it is dumping), dequeue from backupQ
 		WLEntry pkt2 = backupQs[i].first();
 		backupQs[i].deq();
 		engineQs[i].enq(pkt2);
@@ -259,14 +268,14 @@ module mkWorklistFIFO(Worklist);
 		    else begin
                         enqQs[i].deq();
                         engine.streamIn[i].put(pkt);
-                        //$display("%0d: WorklistFIFO kick to streamIn[%0d][%0d], node id is %0d, pkt pri: %0d, cur pri: %0d", cur_cycle, fpgaId, i, tpl_2(pkt), pri, priorities[i]);
+                        $display("%0d: WorklistFIFO kick to streamIn[%0d][%0d], node id is %0d, pkt pri: %0d, cur pri: %0d", cur_cycle, fpgaId, i, tpl_2(pkt), pri, priorities[i]);
 		    end
 		end
             end
             else begin
                 enqQs[i].deq();
                 engine.streamIn[i].put(pkt);
-                //$display("%0d: WorklistFIFO spill to streamIn[%0d][%0d], node id is %0d", cur_cycle, fpgaId, i, tpl_2(pkt));
+                $display("%0d: WorklistFIFO spill to streamIn[%0d][%0d], node id is %0d", cur_cycle, fpgaId, i, tpl_2(pkt));
             end
         endrule
 

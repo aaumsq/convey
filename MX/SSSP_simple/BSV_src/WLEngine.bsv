@@ -46,7 +46,7 @@ endinterface
 `define LG_WLENTRY_SIZE 3
 `define WLENGINE_MAX_WRITES 16384
 `define WLENGINE_BACKOFF 128
-`define WRITEFSM_TIMEOUT 2048
+`define WRITEFSM_TIMEOUT 16
 
 (* synthesize *)
 module mkWLEngine(WLEngine);
@@ -92,6 +92,7 @@ module mkWLEngine(WLEngine);
     Reg#(Bool) started <- mkReg(False);
     Reg#(Bool) done <- mkReg(False);
     Reg#(Bool) turn <- mkReg(False);
+    Reg#(Bit#(1)) toggle <- mkRegU;
     Reg#(Bit#(1)) curBufOut <- mkRegU;
     
     Vector#(`NUM_ENGINES, FIFOF#(WLEntry)) reqQ <- replicateM(mkFIFOF);
@@ -243,6 +244,10 @@ module mkWLEngine(WLEngine);
 	           curBufOut <= writeFSM_curBufIdx + 1;
             endaction
 
+	    action
+	        noAction;
+	    endaction
+
             action
                 if (spillTo0_0) begin
                     Bit#(16) writeFSM_numTotalEntries_partial = bufOutTotalLen[0][writeFSM_curBufIdx] + bufOutTotalLen[1][writeFSM_curBufIdx];
@@ -262,6 +267,9 @@ module mkWLEngine(WLEngine);
                     writeFSM_tails[7][0] <= extend(writeFSM_numTotalEntries_partial5 + writeFSM_numTotalEntries_partial6);
                     writeFSM_numTotalEntries[0] <= writeFSM_numTotalEntries_partial5 + writeFSM_numTotalEntries_partial7;
                     for (Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
+                        for (Integer j = 0; j < 8; j = j + 1) begin
+                            bufOutLen[i][j][writeFSM_curBufIdx] <= 0;
+                        end
                         bufOutTotalLen[i][writeFSM_curBufIdx] <= 0;
                     end
                 end
@@ -358,7 +366,22 @@ module mkWLEngine(WLEngine);
                 Bit#(16) writeFSM_totalWrites = 0;
                 if (spillTo0_0) begin
                     writeFSM_totalWrites = writeFSM_numTotalEntries[0];
-                    tailPtrBase[0] <= tailPtrBase[0] + extend(writeFSM_numTotalEntries[0]);
+                    if (rg_offset[2:0] == 3'd0)
+                        tailPtrBase[0] <= tailPtrBase[0] + extend(writeFSM_numTotalEntries[0]);
+                    else if (rg_offset[2:0] == 3'd1)
+                        tailPtrBase[7] <= tailPtrBase[7] + extend(writeFSM_numTotalEntries[0]);
+                    else if (rg_offset[2:0] == 3'd2)
+                        tailPtrBase[6] <= tailPtrBase[6] + extend(writeFSM_numTotalEntries[0]);
+                    else if (rg_offset[2:0] == 3'd3)
+                        tailPtrBase[5] <= tailPtrBase[5] + extend(writeFSM_numTotalEntries[0]);
+                    else if (rg_offset[2:0] == 3'd4)
+                        tailPtrBase[4] <= tailPtrBase[4] + extend(writeFSM_numTotalEntries[0]);
+                    else if (rg_offset[2:0] == 3'd5)
+                        tailPtrBase[3] <= tailPtrBase[3] + extend(writeFSM_numTotalEntries[0]);
+                    else if (rg_offset[2:0] == 3'd6)
+                        tailPtrBase[2] <= tailPtrBase[2] + extend(writeFSM_numTotalEntries[0]);
+                    else
+                        tailPtrBase[1] <= tailPtrBase[1] + extend(writeFSM_numTotalEntries[0]);
                     tailPtr_w[0] <= tailPtr_w[0] + extend(writeFSM_numTotalEntries[0]);
                 end
                 else begin
@@ -393,7 +416,7 @@ module mkWLEngine(WLEngine);
                 for (Integer i = 0; i < 7; i = i + 1) begin
                     if (headPtr_w[i] != tailPtr_w[i]) move = False;
                 end
-                if ((headPtr_w[7] == tailPtr_w[7])) move = False;
+                //if ((headPtr_w[7] == tailPtr_w[7])) move = False;
                 //$display("move is %b, rg_move_engine is %b, rg_cur_pri is %b", move, rg_move_engine, rg_cur_pri);
                 if (spillTo0_0) begin
                     spillTo0_0 <= False;
@@ -438,7 +461,7 @@ module mkWLEngine(WLEngine);
             readFSM_outstandingReads[i].deq();
             
             WLEntry entry = unpack(rsp.data);
-            //$display("%0d: mkWLEngine[%0d]: ReadFSM entry priority: %0x, graphId: %0x", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
+            //$display("%0d: mkWLEngine[%0d]: ReadFSM entry priority: %0x, graphId: %0d", cur_cycle, fpgaId, tpl_1(entry), tpl_2(entry));
             doubleBufIn[i][readFSM_buf].enq(entry);
         endrule
     end
@@ -666,65 +689,68 @@ module mkWLEngine(WLEngine);
         endseq
     );
     
-    rule startRead(started && readFSM.done);
+    Reg#(Bit#(16)) triggerWriteFSM_timeout <- mkRegU;
+    Reg#(Bit#(1)) triggerWriteFSM_lastIdx <- mkRegU;
+
+    rule startFSM(started && readFSM.done && writeFSM.done);
         function Bool bufInEmptyF0(Integer x) = !doubleBufIn[x][0].notEmpty;
         function Bool bufInEmptyF1(Integer x) = !doubleBufIn[x][1].notEmpty;
         function Bool isTrueF(Bool x) = x;
         Vector#(`NUM_ENGINES, Bool) bufInEmpties0 = genWith(bufInEmptyF0);
         Vector#(`NUM_ENGINES, Bool) bufInEmpties1 = genWith(bufInEmptyF1);
-        //let elem0 = findElem(True, bufInEmpties0);
-        //let elem1 = findElem(True, bufInEmpties1);
-        let empty0 = all(isTrueF, bufInEmpties0);
-        let empty1 = all(isTrueF, bufInEmpties1);
-        if(empty0) begin
-            //Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem0));
-            //$display("BufInEmpties: %b, Empty idx: %0d", bufInEmpties0, idx);
-            //readFSM_bufIdx <= idx;
-            readFSM_buf <= 0;
-            readFSM.start();
-        end
-        else if(empty1) begin
-            //Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem1));
-            //$display("BufInEmpties: %b, Empty idx: %0d", idx);
-            //readFSM_bufIdx <= idx;
-            readFSM_buf <= 1;
-            readFSM.start();
-        end
-    endrule
-    
-    
-    Reg#(Bit#(16)) triggerWriteFSM_timeout <- mkRegU;
-    Reg#(Bit#(1)) triggerWriteFSM_lastIdx <- mkRegU;
-    rule triggerWriteFSM(started && writeFSM.done && readFSM.done);
         function Bool bufOutFullF(Integer x) = !doubleBufOut[x][writeFSM_curBufIdx].notFull;
         function Bool bufOutEmptyF(Integer x) = doubleBufOut[x][writeFSM_curBufIdx].notEmpty;
         Vector#(`NUM_ENGINES, Bool) bufOutFulls = genWith(bufOutFullF);
         Vector#(`NUM_ENGINES, Bool) bufOutEmpties = genWith(bufOutEmptyF);
-        function Bool isTrueF(Bool x) = x;
-        if(any(isTrueF, bufOutEmpties)) begin
-            //$display("%0d: WLEngine[%0d] triggerWriteFSM buffer:%0d notEmpty: %0b", cur_cycle, fpgaId, writeFSM_curBufIdx, bufOutEmpties);
-            writeFSM.start();
-            triggerWriteFSM_timeout <= 0;
-            rg_cur_pri <= cur_pri;
-        end
-        else begin
-            //$display("WLEngine triggerWriteFSM curBuf: %0d full: %b", writeFSM_curBufIdx, bufOutFulls);
-            if(triggerWriteFSM_timeout > `WRITEFSM_TIMEOUT) begin
-                triggerWriteFSM_timeout <= 0;
-                //triggerWriteFSM_lastIdx <= triggerWriteFSM_lastIdx + 1;
-                //writeFSM_curBufIdx <= triggerWriteFSM_lastIdx;
+        //let elem0 = findElem(True, bufInEmpties0);
+        //let elem1 = findElem(True, bufInEmpties1);
+	//$display("%0d: start FSM, toggle is %0d", cur_cycle, toggle);
+	if (toggle == 0) begin
+            let empty0 = all(isTrueF, bufInEmpties0);
+            let empty1 = all(isTrueF, bufInEmpties1);
+            if(empty0) begin
+                //Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem0));
+                //$display("%0d:BufInEmpties: %b, Empty idx: 0", cur_cycle, bufInEmpties0);
+                //readFSM_bufIdx <= idx;
+                readFSM_buf <= 0;
+                readFSM.start();
+            end
+            else if(empty1) begin
+                //Bit#(`LG_NUM_ENGINES) idx = pack(fromMaybe(?, elem1));
+                //$display("%0d:BufInEmpties: %b, Empty idx: 1", cur_cycle, bufInEmpties1);
+                //readFSM_bufIdx <= idx;
+                readFSM_buf <= 1;
+                readFSM.start();
+            end
+	    toggle <= 1;
+	end
+	else begin
+	    toggle <= 0;
+            if(any(isTrueF, bufOutEmpties)) begin
+                //$display("%0d: WLEngine[%0d] triggerWriteFSM buffer:%0d notEmpty: %0b", cur_cycle, fpgaId, writeFSM_curBufIdx, bufOutEmpties);
                 writeFSM.start();
+                triggerWriteFSM_timeout <= 0;
                 rg_cur_pri <= cur_pri;
-                //$display("%0d: Triggering WriteFSM...", cur_cycle);
             end
             else begin
-                writeFSM_curBufIdx <= writeFSM_curBufIdx + 1;
-                //$display("%0d: Change writeFSM_curBufIdx from %0d to %0d", cur_cycle, writeFSM_curBufIdx, writeFSM_curBufIdx+1);
-                triggerWriteFSM_timeout <= triggerWriteFSM_timeout + 1;
-                spillTo0_0 <= False;
-                //rg_offset_buf <= rg_offset_w;
+                //$display("WLEngine triggerWriteFSM curBuf: %0d full: %b", writeFSM_curBufIdx, bufOutFulls);
+                if(triggerWriteFSM_timeout > `WRITEFSM_TIMEOUT) begin
+                    triggerWriteFSM_timeout <= 0;
+                    //triggerWriteFSM_lastIdx <= triggerWriteFSM_lastIdx + 1;
+                    //writeFSM_curBufIdx <= triggerWriteFSM_lastIdx;
+                    writeFSM.start();
+                    rg_cur_pri <= cur_pri;
+                    //$display("%0d: Triggering WriteFSM...", cur_cycle);
+                end
+                else begin
+                    writeFSM_curBufIdx <= writeFSM_curBufIdx + 1;
+                    //$display("%0d: Change writeFSM_curBufIdx from %0d to %0d", cur_cycle, writeFSM_curBufIdx, writeFSM_curBufIdx+1);
+                    triggerWriteFSM_timeout <= triggerWriteFSM_timeout + 1;
+                    spillTo0_0 <= False;
+                    //rg_offset_buf <= rg_offset_w;
+                end
             end
-        end
+	end
     endrule
     
     for(Integer i = 0; i < `NUM_ENGINES; i = i + 1) begin
@@ -852,6 +878,7 @@ module mkWLEngine(WLEngine);
         //rg_move_read <= 0;
         rg_move_engine <= False;
         turn <= False;
+	toggle <= 0;
         readIsDone <= False;
         writeIsDone <= False;
         done <= False;
